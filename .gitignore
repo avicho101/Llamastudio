@@ -1,0 +1,28 @@
+# Rust / Cargo
+/target/
+**/target/
+Cargo.lock
+
+# Node / frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Tauri build artifacts
+src-tauri/gen/
+src-tauri/target/
+**/*.rs.bk
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
+
+# Local app config (persisted binary path etc.)
+llamastudio.config.json
+
+# Secrets / keys
+*.pem
+*.key
+.env

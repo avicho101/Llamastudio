@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capabilities for LlamaStudio",
+  "windows": ["main", "splash"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "process:default",
+    {
+      "identifier": "core:event:default",
+      "allow": [{ "window": "main" }, { "window": "splash" }]
+    }
+  ]
+}

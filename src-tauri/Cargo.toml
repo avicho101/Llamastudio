@@ -1,0 +1,27 @@
+[package]
+name = "llamastudio"
+version = "0.1.0"
+description = "Native desktop GUI for llama.cpp's llama-server"
+authors = ["you"]
+edition = "2021"
+
+[lib]
+name = "llamastudio_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0.4", features = [] }
+
+[dependencies]
+tauri = { version = "2.1.1", features = ["tray-icon"] }
+tauri-plugin-dialog = "2.2.0"
+tauri-plugin-process = "2.2.0"
+tauri-plugin-single-instance = "2.2.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json", "stream"], default-features = false }
+futures-util = "0.3"
+dirs = "5"
+sysinfo = "0.33"
+regex = "1"
