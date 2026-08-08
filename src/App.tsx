@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   Category,
   ConfigValues,
@@ -36,6 +36,8 @@ export default function App() {
   const [theme, setTheme] = useState<"dark" | "light">(
     () => (localStorage.getItem("llamastudio-theme") as "dark" | "light") || "dark"
   );
+  const [floatTab, setFloatTab] = useState<Tab | null>(null);
+  const [floatPos, setFloatPos] = useState<{ x: number; y: number }>({ x: 60, y: 90 });
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -124,7 +126,6 @@ export default function App() {
         setRunning(false);
       }
       await invoke("swap_model", { modelPath });
-      // restart with full current config
       const args = buildArgs({ ...cfg, "--model": modelPath }, binaryPath);
       await invoke("start_server", { args: args.slice(1) });
       setRunning(true);
@@ -221,7 +222,6 @@ export default function App() {
         const path = e.payload;
         setProfileMsg(`Opening profile: ${path}…`);
         setActiveTab("profiles");
-        // Load config into the UI and auto-start if a model is set
         applyProfilePath(path, true);
       });
       unsub = a;
@@ -266,11 +266,52 @@ export default function App() {
     }
   };
 
+  // Auto-detect environment on startup (replaces the old manual Detect button)
+  useEffect(() => {
+    detectEnv();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Floating-window drag
+  const dragRef = useRef<{ dx: number; dy: number } | null>(null);
+  const onFloatPointerDown = (e: React.PointerEvent) => {
+    dragRef.current = { dx: e.clientX - floatPos.x, dy: e.clientY - floatPos.y };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onFloatPointerMove = (e: React.PointerEvent) => {
+    if (!dragRef.current) return;
+    setFloatPos({
+      x: Math.max(0, e.clientX - dragRef.current.dx),
+      y: Math.max(0, e.clientY - dragRef.current.dy),
+    });
+  };
+  const onFloatPointerUp = () => {
+    dragRef.current = null;
+  };
+
   const scanModels = async () => {
     if (!modelsDir) return;
     try {
-      const m = await invoke<string[]>("list_models", { dir: modelsDir });
-      setModelFiles(m);
+      const res = await invoke<{
+        models: string[];
+        mmproj: string | null;
+        lora: string | null;
+        control_vector: string | null;
+      }>("scan_dir", { dir: modelsDir });
+      setModelFiles(res.models);
+      // Auto-populate every detected file into its corresponding field.
+      if (res.models.length > 0) {
+        onChange("--model", `${modelsDir}/${res.models[0]}`);
+      }
+      if (res.mmproj) {
+        onChange("--mmproj", `${modelsDir}/${res.mmproj}`);
+      }
+      if (res.lora) {
+        onChange("--lora", `${modelsDir}/${res.lora}`);
+      }
+      if (res.control_vector) {
+        onChange("--control-vector", `${modelsDir}/${res.control_vector}`);
+      }
     } catch (e) {
       setError(String(e));
     }
@@ -280,7 +321,6 @@ export default function App() {
     setError("");
     try {
       const args = buildArgs(cfg, binaryPath);
-      // first arg is binary; strip it for start_server which prepends binary
       await invoke("start_server", { args: args.slice(1) });
       setRunning(true);
       setStatus("Running");
@@ -363,6 +403,221 @@ export default function App() {
     }
   };
 
+  const renderTab = (tab: Tab) => {
+    if (tab === "config") {
+      return (
+        <div className="config-layout">
+          <div className="models-panel">
+            <h3>Models Folder</h3>
+            <div className="path-row">
+              <input
+                className="path-input"
+                value={modelsDir}
+                onChange={(e) => setModelsDir(e.target.value)}
+                placeholder="folder with .gguf files"
+              />
+              <button
+                className="btn-small"
+                onClick={async () => {
+                  try {
+                    const res = await openDirDialog({ title: "Select models folder" });
+                    if (typeof res === "string") {
+                      setModelsDir(res);
+                      await scanModels();
+                    }
+                  } catch (e) {
+                    setError(String(e));
+                  }
+                }}
+              >
+                Browse…
+              </button>
+            </div>
+            <button className="btn-small" onClick={scanModels}>
+              Scan
+            </button>
+            <ul className="model-list">
+              {modelFiles.map((m) => (
+                <li
+                  key={m}
+                  onClick={() =>
+                    onChange(
+                      "--model",
+                      m.includes(":\\") || m.startsWith("/") ? m : `${modelsDir}/${m}`
+                    )
+                  }
+                  className={
+                    String(cfg["--model"] || "").includes(m) ? "selected" : ""
+                  }
+                >
+                  {m}
+                </li>
+              ))}
+              {modelFiles.length === 0 && (
+                <li className="empty">No models found</li>
+              )}
+            </ul>
+
+            {devices.length > 0 && (
+              <div className="devices">
+                <h3>Detected Devices</h3>
+                {devices.map((d) => (
+                  <div key={d.index} className="device-card">
+                    <div className="dev-name">{d.name}</div>
+                    <div className="dev-meta">
+                      {d.backend.toUpperCase()} ·{" "}
+                      {d.vram_mb > 0
+                        ? `${Math.round(d.vram_mb / 1024)} GB VRAM`
+                        : "no VRAM"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flags-panel">
+            <div className="cli-preview">
+              <div className="cli-head">
+                Command preview (copy & run manually if you prefer)
+              </div>
+              <code>{cliPreview || "(set model + flags)"}</code>
+            </div>
+            {schema.map((cat) => (
+              <section key={cat.id} className="cat">
+                <h2>{cat.label}</h2>
+                <div className="flags-grid">
+                  {cat.flags.map((f) => (
+                    <FlagControl
+                      key={f.name}
+                      flag={f}
+                      value={cfg[f.name] ?? f.default}
+                      onChange={onChange}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    if (tab === "logs") {
+      return (
+        <div className="logs-panel">
+          {logs.length === 0 ? (
+            <div className="logs-empty">
+              No logs yet. Start the server to see output.
+            </div>
+          ) : (
+            logs.map((l, i) => (
+              <div key={i} className="log-line">
+                {l}
+              </div>
+            ))
+          )}
+          <div ref={(el) => setLogTail(el)} />
+        </div>
+      );
+    }
+    if (tab === "chat") {
+      return (
+        <div className="chat-panel">
+          <div className="chat-history">
+            {chat.length === 0 && (
+              <div className="chat-empty">
+                Start a conversation with your model. Make sure the server is
+                running.
+              </div>
+            )}
+            {chat.map((m, i) => (
+              <div key={i} className={`bubble ${m.role}`}>
+                {m.content}
+              </div>
+            ))}
+          </div>
+          <div className="chat-input">
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  sendChat();
+                }
+              }}
+              placeholder="Type a message… (Enter to send)"
+            />
+            <button
+              className="btn-primary"
+              onClick={sendChat}
+              disabled={streaming}
+            >
+              {streaming ? "…" : "Send"}
+            </button>
+          </div>
+        </div>
+      );
+    }
+    // profiles
+    return (
+      <div className="profiles-panel">
+        <h3>LlamaStudio Profiles</h3>
+        <p className="muted">
+          Save your current flags + model as a <code>.llamaprofile</code> file.
+          Double-click it later to reopen the model with the exact same settings.
+        </p>
+
+        <div className="profile-row">
+          <label>Profile name</label>
+          <input
+            value={profileName}
+            onChange={(e) => setProfileName(e.target.value)}
+            placeholder="e.g. Gemma4-26B-Q4-CLI"
+          />
+        </div>
+
+        <div className="profile-actions">
+          <button className="btn-primary" onClick={saveCurrentProfile}>
+            💾 Save current config
+          </button>
+          <button className="btn" onClick={loadProfileFromFile}>
+            📂 Load profile
+          </button>
+          <button className="btn" onClick={registerFileType}>
+            🔗 Associate .llamaprofile (double-click)
+          </button>
+        </div>
+
+        {profileMsg && <div className="profile-msg">{profileMsg}</div>}
+
+        <div className="profile-help">
+          <h4>How double-click works</h4>
+          <ol>
+            <li>
+              The installer (NSIS .exe) registers <code>.llamaprofile</code>{" "}
+              automatically — just install LlamaStudio normally.
+            </li>
+            <li>
+              For portable/zip builds, click <b>Associate .llamaprofile</b> once
+              (run as Admin if it fails).
+            </li>
+            <li>
+              Save a profile with <b>Save current config</b>, then double-click
+              the <code>.llamaprofile</code> file in Explorer → LlamaStudio opens
+              and launches the model with your saved flags.
+            </li>
+          </ol>
+          <p className="muted">
+            The file is plain JSON (with a <code>llamastudio_profile</code> marker),
+            so you can edit or share it. Binary path is optional — if blank, the
+            app uses its current binary.
+          </p>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="app">
       <header className="topbar">
@@ -380,9 +635,6 @@ export default function App() {
           />
           <button className="btn-small" onClick={pickBinary}>
             Browse…
-          </button>
-          <button className="btn-small" onClick={detectEnv}>
-            Detect
           </button>
         </div>
         <div className="server-controls">
@@ -525,211 +777,51 @@ export default function App() {
         >
           Profiles
         </button>
+        <button
+          className="btn-small float-btn"
+          title="Open the current tab in a floating window"
+          onClick={() => setFloatTab(activeTab)}
+        >
+          ⧉ Float
+        </button>
       </div>
 
       <main className="content">
-        {activeTab === "config" && (
-          <div className="config-layout">
-            <div className="models-panel">
-              <h3>Models Folder</h3>
-              <div className="path-row">
-                <input
-                  className="path-input"
-                  value={modelsDir}
-                  onChange={(e) => setModelsDir(e.target.value)}
-                  placeholder="folder with .gguf files"
-                />
-                <button
-                  className="btn-small"
-                  onClick={async () => {
-                    try {
-                      const res = await openDirDialog({ title: "Select models folder" });
-                      if (typeof res === "string") {
-                        setModelsDir(res);
-                      }
-                    } catch (e) {
-                      setError(String(e));
-                    }
-                  }}
-                >
-                  Browse…
-                </button>
-              </div>
-              <button className="btn-small" onClick={scanModels}>
-                Scan
-              </button>
-              <ul className="model-list">
-                {modelFiles.map((m) => (
-                  <li
-                    key={m}
-                    onClick={() => onChange("--model", m.includes(":\\") || m.startsWith("/") ? m : `${modelsDir}/${m}`)}
-                    className={
-                      String(cfg["--model"] || "").includes(m)
-                        ? "selected"
-                        : ""
-                    }
-                  >
-                    {m}
-                  </li>
-                ))}
-                {modelFiles.length === 0 && (
-                  <li className="empty">No models found</li>
-                )}
-              </ul>
-
-              {devices.length > 0 && (
-                <div className="devices">
-                  <h3>Detected Devices</h3>
-                  {devices.map((d) => (
-                    <div key={d.index} className="device-card">
-                      <div className="dev-name">{d.name}</div>
-                      <div className="dev-meta">
-                        {d.backend.toUpperCase()} ·{" "}
-                        {d.vram_mb > 0
-                          ? `${Math.round(d.vram_mb / 1024)} GB VRAM`
-                          : "no VRAM"}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="flags-panel">
-              <div className="cli-preview">
-                <div className="cli-head">
-                  Command preview (copy & run manually if you prefer)
-                </div>
-                <code>{cliPreview || "(set model + flags)"}</code>
-              </div>
-              {schema.map((cat) => (
-                <section key={cat.id} className="cat">
-                  <h2>{cat.label}</h2>
-                  <div className="flags-grid">
-                    {cat.flags.map((f) => (
-                      <FlagControl
-                        key={f.name}
-                        flag={f}
-                        value={cfg[f.name] ?? f.default}
-                        onChange={onChange}
-                      />
-                    ))}
-                  </div>
-                </section>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {activeTab === "logs" && (
-          <div className="logs-panel">
-            {logs.length === 0 ? (
-              <div className="logs-empty">
-                No logs yet. Start the server to see output.
-              </div>
-            ) : (
-              logs.map((l, i) => (
-                <div key={i} className="log-line">
-                  {l}
-                </div>
-              ))
-            )}
-            <div ref={(el) => setLogTail(el)} />
-          </div>
-        )}
-
-        {activeTab === "chat" && (
-          <div className="chat-panel">
-            <div className="chat-history">
-              {chat.length === 0 && (
-                <div className="chat-empty">
-                  Start a conversation with your model. Make sure the server is
-                  running.
-                </div>
-              )}
-              {chat.map((m, i) => (
-                <div key={i} className={`bubble ${m.role}`}>
-                  {m.content}
-                </div>
-              ))}
-            </div>
-            <div className="chat-input">
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    sendChat();
-                  }
-                }}
-                placeholder="Type a message… (Enter to send)"
-              />
-              <button
-                className="btn-primary"
-                onClick={sendChat}
-                disabled={streaming}
-              >
-                {streaming ? "…" : "Send"}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {activeTab === "profiles" && (
-          <div className="profiles-panel">
-            <h3>LlamaStudio Profiles</h3>
-            <p className="muted">
-              Save your current flags + model as a <code>.llamaprofile</code> file.
-              Double-click it later to reopen the model with the exact same settings.
-            </p>
-
-            <div className="profile-row">
-              <label>Profile name</label>
-              <input
-                value={profileName}
-                onChange={(e) => setProfileName(e.target.value)}
-                placeholder="e.g. Gemma4-26B-Q4-CLI"
-              />
-            </div>
-
-            <div className="profile-actions">
-              <button className="btn-primary" onClick={saveCurrentProfile}>
-                💾 Save current config
-              </button>
-              <button className="btn" onClick={loadProfileFromFile}>
-                📂 Load profile
-              </button>
-              <button className="btn" onClick={registerFileType}>
-                🔗 Associate .llamaprofile (double-click)
-              </button>
-            </div>
-
-            {profileMsg && <div className="profile-msg">{profileMsg}</div>}
-
-            <div className="profile-help">
-              <h4>How double-click works</h4>
-              <ol>
-                <li>
-                  The installer (NSIS .exe) registers <code>.llamaprofile</code> automatically —
-                  just install LlamaStudio normally.
-                </li>
-                <li>
-                  For portable/zip builds, click <b>Associate .llamaprofile</b> once (run as Admin if it fails).
-                </li>
-                <li>
-                  Save a profile with <b>Save current config</b>, then double-click the
-                  <code>.llamaprofile</code> file in Explorer → LlamaStudio opens and launches the model with your saved flags.
-                </li>
-              </ol>
-              <p className="muted">
-                The file is plain JSON (with a <code>llamastudio_profile</code> marker), so you can
-                edit or share it. Binary path is optional — if blank, the app uses its current binary.
-              </p>
-            </div>
-          </div>
-        )}
+        {activeTab === "config" && renderTab("config")}
+        {activeTab === "logs" && renderTab("logs")}
+        {activeTab === "chat" && renderTab("chat")}
+        {activeTab === "profiles" && renderTab("profiles")}
       </main>
+
+      {/* Floating tab window — detaches the current tab into a draggable overlay */}
+      {floatTab && (
+        <div className="float-window" style={{ left: floatPos.x, top: floatPos.y }}>
+          <div
+            className="float-header"
+            onPointerDown={onFloatPointerDown}
+            onPointerMove={onFloatPointerMove}
+            onPointerUp={onFloatPointerUp}
+          >
+            <span className="float-title">
+              {floatTab === "logs"
+                ? "Logs"
+                : floatTab === "chat"
+                ? "Chat"
+                : floatTab === "profiles"
+                ? "Profiles"
+                : "Configuration"}
+            </span>
+            <button
+              className="float-close"
+              title="Dock back"
+              onClick={() => setFloatTab(null)}
+            >
+              ✕
+            </button>
+          </div>
+          <div className="float-body">{renderTab(floatTab)}</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -750,7 +842,6 @@ function buildArgs(cfg: ConfigValues, binaryPath: string): string[] {
   }
   // CPU-only mode: force zero GPU layers regardless of --n-gpu-layers value
   if (noGpu) {
-    // ensure --n-gpu-layers 0 (drop any prior value)
     const idx = args.findIndex((a) => a === "--n-gpu-layers");
     if (idx >= 0) {
       args.splice(idx, 2);

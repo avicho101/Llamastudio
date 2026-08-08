@@ -26,3 +26,4 @@ llamastudio.config.json
 *.pem
 *.key
 .env
+LlamaStudio-setup.exe

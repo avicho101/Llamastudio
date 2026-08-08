@@ -697,3 +697,59 @@ button:hover {
   color: #d7dbe3;
 }
 
+/* ---- Floating tab window ---- */
+.float-btn {
+  margin-left: auto;
+}
+.float-window {
+  position: fixed;
+  z-index: 9999;
+  width: min(680px, 92vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-2, #1b1f29);
+  border: 1px solid var(--border, #2a2f3a);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+.float-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: linear-gradient(90deg, #6a44ff22, #00a88222);
+  border-bottom: 1px solid var(--border, #2a2f3a);
+  cursor: grab;
+  user-select: none;
+}
+.float-header:active {
+  cursor: grabbing;
+}
+.float-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text, #e6e9ef);
+}
+.float-close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim, #9aa3b2);
+  font-size: 1rem;
+  cursor: pointer;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.float-close:hover {
+  background: var(--bg-3, #2a2f3a);
+  color: var(--text, #fff);
+}
+.float-body {
+  overflow: auto;
+  padding: 10px;
+  min-height: 160px;
+}
+
+

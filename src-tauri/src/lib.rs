@@ -211,6 +211,61 @@ fn list_models(state: tauri::AppHandle, dir: String) -> Vec<String> {
     out
 }
 
+/// Scan a directory and auto-detect the model + auxiliary files (mmproj,
+/// lora, control-vector) so the UI can populate every field automatically.
+#[derive(serde::Serialize)]
+struct DirScan {
+    models: Vec<String>,
+    mmproj: Option<String>,
+    lora: Option<String>,
+    control_vector: Option<String>,
+}
+
+#[tauri::command]
+fn scan_dir(dir: String) -> DirScan {
+    let mut models = Vec::new();
+    let mut mmproj = None;
+    let mut lora = None;
+    let mut control_vector = None;
+    let p = Path::new(&dir);
+    if !p.exists() {
+        return DirScan { models, mmproj, lora, control_vector };
+    }
+    if let Ok(entries) = std::fs::read_dir(p) {
+        for e in entries.flatten() {
+            let path = e.path();
+            if !path.is_file() {
+                continue;
+            }
+            let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+            let lower = name.to_lowercase();
+            let is_gguf = lower.ends_with(".gguf");
+            let is_bin = lower.ends_with(".bin");
+            // Multimodal projector: matches "mmproj" anywhere, or a .gguf/.bin
+            // projector that is NOT the main model. Prefer explicit "mmproj" naming.
+            if lower.contains("mmproj") && (is_gguf || is_bin) {
+                if mmproj.is_none() {
+                    mmproj = Some(name.clone());
+                }
+            } else if is_gguf {
+                models.push(name.clone());
+            } else if is_bin {
+                if lower.contains("control") && lower.contains("vector") {
+                    if control_vector.is_none() {
+                        control_vector = Some(name.clone());
+                    }
+                } else if lower.contains("lora") {
+                    if lora.is_none() {
+                        lora = Some(name.clone());
+                    }
+                }
+            }
+        }
+    }
+    models.sort();
+    DirScan { models, mmproj, lora, control_vector }
+}
+
 /// Swap the currently-loaded model: stop the server, set the new model path,
 /// and (if it was running) restart it with the new model + existing config.
 #[tauri::command]
@@ -566,6 +621,7 @@ pub fn run() {
             detect_binary,
             list_gpus,
             list_models,
+            scan_dir,
             is_running,
             server_uptime,
             get_logs,
