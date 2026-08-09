@@ -65,6 +65,20 @@ export default function App() {
           { id: string; label: string; description: string; patch: Record<string, unknown> }[]
         >("get_presets");
         setPresets(p);
+        // Load persisted ContextShift settings so the toggle survives restarts.
+        const st = await invoke<{
+          context_shift: boolean;
+          context_shift_port: number;
+          context_shift_keep: number;
+        }>("load_settings");
+        if (st) {
+          setCfg((prev) => ({
+            ...prev,
+            "--context-shift": st.context_shift,
+            "--context-shift-port": st.context_shift_port,
+            "--context-shift-keep": st.context_shift_keep,
+          }));
+        }
       } catch (e) {
         setError(String(e));
       }
@@ -265,7 +279,7 @@ export default function App() {
       if (enabled) {
         const targetHost = String(cfg["--host"] || "127.0.0.1");
         const targetPort = Number(cfg["--port"] || 8080);
-        const listenHost = targetHost; // proxy binds on same host as llama.cpp
+        const listenHost = "0.0.0.0"; // bind permissively so 127.0.0.1 reaches it
         const listenPort = Number(cfg["--context-shift-port"] || 8081);
         const ctxSize = Number(cfg["--ctx-size"] || 0) || 8192;
         const keepPct = Number(cfg["--context-shift-keep"] || 75);
@@ -282,6 +296,12 @@ export default function App() {
         await invoke("stop_proxy");
         setStatus("ContextShift off");
       }
+      // Persist so it survives restarts.
+      await invoke("save_settings", {
+        contextShift: enabled,
+        contextShiftPort: Number(cfg["--context-shift-port"] || 8081),
+        contextShiftKeep: Number(cfg["--context-shift-keep"] || 75),
+      });
     } catch (e) {
       setError(String(e));
     }
@@ -889,9 +909,16 @@ export default function App() {
                   type="number"
                   className="mini-input"
                   value={Number(cfg["--context-shift-port"] ?? 8081)}
-                  onChange={(e) =>
-                    onChange("--context-shift-port", e.target.value === "" ? "" : Number(e.target.value))
-                  }
+                  onChange={(e) => {
+                    const v = e.target.value === "" ? "" : Number(e.target.value);
+                    onChange("--context-shift-port", v);
+                    if (cfg["--context-shift"] === true)
+                      invoke("save_settings", {
+                        contextShift: true,
+                        contextShiftPort: Number(v || 8081),
+                        contextShiftKeep: Number(cfg["--context-shift-keep"] || 75),
+                      }).catch(() => {});
+                  }}
                 />
               </label>
               <label className="mini">
@@ -902,9 +929,16 @@ export default function App() {
                   min={20}
                   max={95}
                   value={Number(cfg["--context-shift-keep"] ?? 75)}
-                  onChange={(e) =>
-                    onChange("--context-shift-keep", e.target.value === "" ? "" : Number(e.target.value))
-                  }
+                  onChange={(e) => {
+                    const v = e.target.value === "" ? "" : Number(e.target.value);
+                    onChange("--context-shift-keep", v);
+                    if (cfg["--context-shift"] === true)
+                      invoke("save_settings", {
+                        contextShift: true,
+                        contextShiftPort: Number(cfg["--context-shift-port"] || 8081),
+                        contextShiftKeep: Number(v || 75),
+                      }).catch(() => {});
+                  }}
                 />
               </label>
               <span className="ctx-shift-url">

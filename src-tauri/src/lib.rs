@@ -26,10 +26,28 @@ fn load_saved_binary() -> Option<String> {
 
 fn save_binary(path: &str) {
     if let Some(f) = config_file() {
-        let _ = std::fs::write(
-            &f,
-            serde_json::json!({ "binary_path": path }).to_string(),
-        );
+        let mut v = load_config_json();
+        v["binary_path"] = serde_json::json!(path);
+        let _ = std::fs::write(&f, v.to_string());
+    }
+}
+
+fn load_config_json() -> serde_json::Value {
+    if let Some(f) = config_file() {
+        if let Ok(s) = std::fs::read_to_string(f) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                return v;
+            }
+        }
+    }
+    serde_json::json!({})
+}
+
+fn save_config_value(key: &str, val: serde_json::Value) {
+    if let Some(f) = config_file() {
+        let mut v = load_config_json();
+        v[key] = val;
+        let _ = std::fs::write(&f, v.to_string());
     }
 }
 
@@ -114,6 +132,44 @@ fn set_binary_path(state: tauri::AppHandle, path: String) -> Result<(), String> 
 #[tauri::command]
 fn get_binary_path(state: tauri::AppHandle) -> String {
     state.state::<ServerState>().binary_path.lock().unwrap().clone()
+}
+
+/// Persisted UI settings (survive restarts). Currently ContextShift options.
+#[derive(Serialize, Clone)]
+struct UiSettings {
+    context_shift: bool,
+    context_shift_port: u16,
+    context_shift_keep: u32,
+}
+
+#[tauri::command]
+fn load_settings() -> UiSettings {
+    let v = load_config_json();
+    UiSettings {
+        context_shift: v.get("context_shift").and_then(|x| x.as_bool()).unwrap_or(false),
+        context_shift_port: v
+            .get("context_shift_port")
+            .and_then(|x| x.as_u64())
+            .map(|n| n as u16)
+            .unwrap_or(8081),
+        context_shift_keep: v
+            .get("context_shift_keep")
+            .and_then(|x| x.as_u64())
+            .map(|n| n as u32)
+            .unwrap_or(75),
+    }
+}
+
+#[tauri::command]
+fn save_settings(
+    context_shift: bool,
+    context_shift_port: u16,
+    context_shift_keep: u32,
+) -> Result<(), String> {
+    save_config_value("context_shift", serde_json::json!(context_shift));
+    save_config_value("context_shift_port", serde_json::json!(context_shift_port));
+    save_config_value("context_shift_keep", serde_json::json!(context_shift_keep));
+    Ok(())
 }
 
 /// Probe llama-server --version and build info (captures CUDA/ROCm tags).
@@ -366,6 +422,78 @@ fn start_server(state: tauri::AppHandle, args: Vec<String>) -> Result<(), String
             *st.current_model.lock().unwrap() = m.clone();
         }
     }
+
+    // Auto-start the ContextShift proxy if enabled in the args.
+    if args.iter().any(|a| a == "--context-shift") {
+        let cs_port = args
+            .iter()
+            .position(|a| a == "--context-shift-port")
+            .and_then(|i| args.get(i + 1))
+            .and_then(|s| s.parse::<u16>().ok())
+            .unwrap_or(8081);
+        let host = args
+            .iter()
+            .position(|a| a == "--host")
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+            .unwrap_or_else(|| "127.0.0.1".to_string());
+        let port = args
+            .iter()
+            .position(|a| a == "--port")
+            .and_then(|i| args.get(i + 1))
+            .and_then(|s| s.parse::<u16>().ok())
+            .unwrap_or(8080);
+        let ctx_size = args
+            .iter()
+            .position(|a| a == "--ctx-size")
+            .and_then(|i| args.get(i + 1))
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(0);
+        let keep_pct = args
+            .iter()
+            .position(|a| a == "--context-shift-keep")
+            .and_then(|i| args.get(i + 1))
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(75);
+        // Stop any existing proxy first.
+        if let Some(handle) = st.proxy.lock().unwrap().take() {
+            handle.abort.store(true, std::sync::atomic::Ordering::SeqCst);
+            handle.task.abort();
+        }
+        // Bind on 0.0.0.0 so 127.0.0.1 (and any loopback alias) reaches it.
+        // start_proxy is async (tokio bind); spawn it on the async runtime.
+        let app_for_proxy = state.clone();
+        tauri::async_runtime::spawn(async move {
+            let st_for_proxy = app_for_proxy.state::<ServerState>();
+            match proxy::start_proxy(
+                "0.0.0.0".to_string(),
+                cs_port,
+                host.clone(),
+                port,
+                ctx_size as usize,
+                keep_pct as usize,
+                app_for_proxy.clone(),
+            )
+            .await
+            {
+                Ok(handle) => {
+                    *st_for_proxy.proxy.lock().unwrap() = Some(handle);
+                    push_log(
+                        &app_for_proxy,
+                        &format!(
+                            "[ContextShift] proxy listening on 0.0.0.0:{} -> {}:{}",
+                            cs_port, host, port
+                        ),
+                    );
+                }
+                Err(e) => push_log(
+                    &app_for_proxy,
+                    &format!("[ContextShift] FAILED to start: {}", e),
+                ),
+            }
+        });
+    }
+
     // Update tray tooltip to reflect running state + model + mode
     crate::tray::update_tray_tooltip(&state);
 
@@ -733,7 +861,9 @@ pub fn run() {
             get_app_exe_path,
             register_association,
             start_proxy,
-            stop_proxy
+            stop_proxy,
+            load_settings,
+            save_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
