@@ -1,4 +1,3 @@
-use std::io::{Read};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex};
@@ -373,14 +372,13 @@ fn start_server(state: tauri::AppHandle, args: Vec<String>) -> Result<(), String
     // Stream stdout — read byte-by-byte and split on BOTH \n and \r, because
     // llama.cpp prints live inference progress with carriage returns (no \n),
     // so a line-based reader would never flush those updates.
-    let app_for_out = state.clone();
+    let state_for_err = state.clone();
     std::thread::spawn(move || {
-        stream_logs(stdout, &app_for_out);
+        stream_logs(stdout, &state);
     });
     // Stream stderr
-    let app_for_err = state.clone();
     std::thread::spawn(move || {
-        stream_logs(stderr, &app_for_err);
+        stream_logs(stderr, &state_for_err);
     });
 
     Ok(())
