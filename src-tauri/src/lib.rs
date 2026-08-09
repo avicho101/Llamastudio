@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader};
+use std::io::{Read};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex};
@@ -370,22 +370,53 @@ fn start_server(state: tauri::AppHandle, args: Vec<String>) -> Result<(), String
     let app_for_out = state.clone();
     let app_for_err = state.clone();
 
-    // Stream stdout
+    // Stream stdout — read byte-by-byte and split on BOTH \n and \r, because
+    // llama.cpp prints live inference progress with carriage returns (no \n),
+    // so a line-based reader would never flush those updates.
+    let app_for_out = state.clone();
     std::thread::spawn(move || {
-        let reader = BufReader::new(stdout);
-        for line in reader.lines().map_while(Result::ok) {
-            push_log(&app_for_out, &line);
-        }
+        stream_logs(stdout, &app_for_out);
     });
     // Stream stderr
+    let app_for_err = state.clone();
     std::thread::spawn(move || {
-        let reader = BufReader::new(stderr);
-        for line in reader.lines().map_while(Result::ok) {
-            push_log(&app_for_err, &line);
-        }
+        stream_logs(stderr, &app_for_err);
     });
 
     Ok(())
+}
+
+/// Read a process stream and emit each \n- or \r- terminated segment as a log line.
+fn stream_logs<R: std::io::Read>(reader: R, app: &tauri::AppHandle) {
+    use std::io::Read;
+    let mut buf = Vec::new();
+    let mut byte = [0u8; 1];
+    let mut reader = reader;
+    loop {
+        match reader.read(&mut byte) {
+            Ok(0) => break, // EOF
+            Ok(_) => {
+                let b = byte[0];
+                if b == b'\n' || b == b'\r' {
+                    if !buf.is_empty() {
+                        if let Ok(s) = String::from_utf8(buf.clone()) {
+                            push_log(app, s.trim_end());
+                        }
+                        buf.clear();
+                    }
+                } else {
+                    buf.push(b);
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    // Flush any trailing partial line
+    if !buf.is_empty() {
+        if let Ok(s) = String::from_utf8(buf) {
+            push_log(app, s.trim_end());
+        }
+    }
 }
 
 fn push_log(app: &tauri::AppHandle, line: &str) {
