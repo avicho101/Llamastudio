@@ -532,6 +532,22 @@ fn register_association() -> Result<String, String> {
     if exe.is_empty() {
         return Err("Could not determine the app executable path.".into());
     }
+    // If the association is already registered (e.g. by the NSIS installer),
+    // report success instead of re-running assoc/ftype (which needs Admin).
+    if let Ok(out) = std::process::Command::new("cmd")
+        .args(["/c", "assoc", ".llamaprofile"])
+        .output()
+    {
+        let cur = String::from_utf8_lossy(&out.stdout).to_string();
+        // assoc prints ".llamaprofile=<ProgID>" when associated; empty when not.
+        if cur.trim_start().starts_with(".llamaprofile=") && cur.contains('=') {
+            return Ok(
+                ".llamaprofile is already associated with LlamaStudio. Double-click a profile to open it."
+                    .into(),
+            );
+        }
+    }
+    // Not registered yet — attempt to register (requires Admin on most systems).
     let r1 = std::process::Command::new("cmd")
         .args(["/c", "assoc", ".llamaprofile=LlamaStudio.Profile"])
         .output();
