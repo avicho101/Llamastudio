@@ -366,9 +366,6 @@ fn start_server(state: tauri::AppHandle, args: Vec<String>) -> Result<(), String
     // Update tray tooltip to reflect running state + model + mode
     crate::tray::update_tray_tooltip(&state);
 
-    let app_for_out = state.clone();
-    let app_for_err = state.clone();
-
     // Stream stdout — read byte-by-byte and split on BOTH \n and \r, because
     // llama.cpp prints live inference progress with carriage returns (no \n),
     // so a line-based reader would never flush those updates.
@@ -386,7 +383,6 @@ fn start_server(state: tauri::AppHandle, args: Vec<String>) -> Result<(), String
 
 /// Read a process stream and emit each \n- or \r- terminated segment as a log line.
 fn stream_logs<R: std::io::Read>(reader: R, app: &tauri::AppHandle) {
-    use std::io::Read;
     let mut buf = Vec::new();
     let mut byte = [0u8; 1];
     let mut reader = reader;
