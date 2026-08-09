@@ -256,6 +256,37 @@ export default function App() {
     setCfg((prev) => ({ ...prev, ...p.patch }));
   };
 
+  // Toggle the ContextShift proxy on/off. When on, start a relay in front of
+  // llama.cpp that trims chat history to fit -c. When off (or on server stop),
+  // stop the proxy.
+  const toggleContextShift = async (enabled: boolean) => {
+    onChange("--context-shift", enabled);
+    try {
+      if (enabled) {
+        const targetHost = String(cfg["--host"] || "127.0.0.1");
+        const targetPort = Number(cfg["--port"] || 8080);
+        const listenHost = targetHost; // proxy binds on same host as llama.cpp
+        const listenPort = Number(cfg["--context-shift-port"] || 8081);
+        const ctxSize = Number(cfg["--ctx-size"] || 0) || 8192;
+        const keepPct = Number(cfg["--context-shift-keep"] || 75);
+        const msg = await invoke<string>("start_proxy", {
+          listenHost,
+          listenPort,
+          targetHost,
+          targetPort,
+          ctxSize,
+          keepPct,
+        });
+        setStatus(`ContextShift on · ${msg}`);
+      } else {
+        await invoke("stop_proxy");
+        setStatus("ContextShift off");
+      }
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
   // Flat index of every flag (with its category) for the flag finder.
   const allFlags = schema.flatMap((cat) =>
     cat.flags.map((f) => ({
@@ -836,6 +867,51 @@ export default function App() {
               </option>
             ))}
           </select>
+        </div>
+
+        <div className="quick-field quick-toggle ctx-shift-field">
+          <label className="toggle-row">
+            <input
+              type="checkbox"
+              checked={cfg["--context-shift"] === true}
+              onChange={(e) => toggleContextShift(e.target.checked)}
+            />
+            <span>
+              ContextShift <span className="q-sub">(proxy)</span>
+              <InfoTip text="Optional relay in front of llama.cpp. When the chat history would exceed the context size (-c), it drops the oldest messages and keeps the recent ones — so requests always fit without restarting the server (KoboldCpp-style). Point your client (e.g. Goose) at the proxy port instead of llama.cpp's port." />
+            </span>
+          </label>
+          {cfg["--context-shift"] === true && (
+            <div className="ctx-shift-opts">
+              <label className="mini">
+                Port
+                <input
+                  type="number"
+                  className="mini-input"
+                  value={Number(cfg["--context-shift-port"] ?? 8081)}
+                  onChange={(e) =>
+                    onChange("--context-shift-port", e.target.value === "" ? "" : Number(e.target.value))
+                  }
+                />
+              </label>
+              <label className="mini">
+                Keep %
+                <input
+                  type="number"
+                  className="mini-input"
+                  min={20}
+                  max={95}
+                  value={Number(cfg["--context-shift-keep"] ?? 75)}
+                  onChange={(e) =>
+                    onChange("--context-shift-keep", e.target.value === "" ? "" : Number(e.target.value))
+                  }
+                />
+              </label>
+              <span className="ctx-shift-url">
+                → {String(cfg["--host"] || "127.0.0.1")}:{Number(cfg["--context-shift-port"] ?? 8081)}/v1/chat/completions
+              </span>
+            </div>
+          )}
         </div>
       </div>
 

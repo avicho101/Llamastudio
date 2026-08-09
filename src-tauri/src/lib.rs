@@ -6,6 +6,8 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use tauri::{Emitter, Manager};
 
+mod proxy;
+
 /// Path to the persisted config (binary path + last model dir), stored next to the app.
 fn config_file() -> Option<std::path::PathBuf> {
     let exe = std::env::current_exe().ok()?;
@@ -73,10 +75,11 @@ struct ServerState {
     current_model: Mutex<String>,
     no_gpu: Mutex<bool>, // CPU-only mode (no GPU offload)
     tray: Mutex<Option<tauri::tray::TrayIcon<tauri::Wry>>>,
+    proxy: Mutex<Option<proxy::ProxyHandle>>, // ContextShift proxy (optional)
 }
 
 #[derive(Serialize, Clone)]
-struct LogLine {
+pub struct LogLine {
     line: String,
     ts: u64,
 }
@@ -440,11 +443,62 @@ fn stop_server(state: tauri::AppHandle) -> Result<(), String> {
         *st.started_at.lock().unwrap() = None;
         push_log(&state, "--- server stopped ---");
         drop(guard);
+        // Stop the ContextShift proxy if it was running.
+        if let Some(handle) = st.proxy.lock().unwrap().take() {
+            handle.abort.store(true, std::sync::atomic::Ordering::SeqCst);
+            handle.task.abort();
+        }
         crate::tray::update_tray_tooltip(&state);
         Ok(())
     } else {
         Err("No server running.".into())
     }
+}
+
+/// Start the ContextShift proxy (optional). Relays llama.cpp's API on
+/// `listen_host:listen_port`, trimming chat history to fit `ctx_size`.
+#[tauri::command]
+async fn start_proxy(
+    state: tauri::AppHandle,
+    listen_host: String,
+    listen_port: u16,
+    target_host: String,
+    target_port: u16,
+    ctx_size: u32,
+    keep_pct: u32,
+) -> Result<String, String> {
+    let st = state.state::<ServerState>();
+    // Stop any existing proxy first.
+    if let Some(handle) = st.proxy.lock().unwrap().take() {
+        handle.abort.store(true, std::sync::atomic::Ordering::SeqCst);
+        handle.task.abort();
+    }
+    let handle = proxy::start_proxy(
+        listen_host,
+        listen_port,
+        target_host,
+        target_port,
+        ctx_size as usize,
+        keep_pct as usize,
+        state.clone(),
+    )
+    .await?;
+    *st.proxy.lock().unwrap() = Some(handle);
+    Ok(format!(
+        "ContextShift proxy listening on port {}",
+        listen_port
+    ))
+}
+
+/// Stop the ContextShift proxy if running.
+#[tauri::command]
+fn stop_proxy(state: tauri::AppHandle) -> Result<(), String> {
+    let st = state.state::<ServerState>();
+    if let Some(handle) = st.proxy.lock().unwrap().take() {
+        handle.abort.store(true, std::sync::atomic::Ordering::SeqCst);
+        handle.task.abort();
+    }
+    Ok(())
 }
 
 /// Set CPU-only (no GPU) mode. When on, the server launches with --n-gpu-layers 0.
@@ -633,6 +687,7 @@ pub fn run() {
             current_model: Mutex::new(String::new()),
             no_gpu: Mutex::new(false),
             tray: Mutex::new(None),
+            proxy: Mutex::new(None),
         })
         .setup(|app| {
             // Build the system tray with model-swap menu + toggles
@@ -676,7 +731,9 @@ pub fn run() {
             save_profile,
             load_profile,
             get_app_exe_path,
-            register_association
+            register_association,
+            start_proxy,
+            stop_proxy
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

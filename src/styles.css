@@ -818,5 +818,37 @@ button:hover {
   }
 }
 
+/* ---- ContextShift (proxy) quick-field ---- */
+.ctx-shift-field {
+  display: block;
+}
+.ctx-shift-opts {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+.ctx-shift-opts .mini {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: var(--text-dim, #9aa3b2);
+}
+.ctx-shift-opts .mini-input {
+  width: 60px;
+  padding: 3px 5px;
+  border-radius: 5px;
+  border: 1px solid var(--border, #2a2f3a);
+  background: var(--bg-3, #232733);
+  color: var(--text, #e6e9ef);
+}
+.ctx-shift-url {
+  font-size: 0.7rem;
+  color: var(--accent-2, #00a882);
+  font-family: monospace;
+}
+
 
 

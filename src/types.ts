@@ -68,4 +68,8 @@ export const DEFAULT_CONFIG: ConfigValues = {
   "--top-p": 0.95,
   "--top-k": 40,
   "--repeat-penalty": 1,
+  // ContextShift (optional proxy that trims chat history to fit context)
+  "--context-shift": false,
+  "--context-shift-port": 8081,
+  "--context-shift-keep": 75,
 };
