@@ -134,23 +134,23 @@ async fn handle_conn(mut stream: TcpStream, cfg: ConnCfg) {
     let mut buf = Vec::with_capacity(8192);
     let mut byte = [0u8; 1];
     // Read until we have the full header block.
-    let header_end = (|| {
+    let header_end = 'read: {
         loop {
             match stream.read(&mut byte).await {
-                Ok(0) => return None, // closed
+                Ok(0) => break 'read None, // closed
                 Ok(_) => {
                     buf.push(byte[0]);
                     if buf.len() >= 4 && &buf[buf.len() - 4..] == b"\r\n\r\n" {
-                        return Some(buf.len());
+                        break 'read Some(buf.len());
                     }
                     if buf.len() > 1_000_000 {
-                        return None; // sanity cap
+                        break 'read None; // sanity cap
                     }
                 }
-                Err(_) => return None,
+                Err(_) => break 'read None,
             }
         }
-    })();
+    };
     let header_end = match header_end {
         Some(v) => v,
         None => return,
