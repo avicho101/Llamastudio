@@ -94,6 +94,7 @@ struct ServerState {
     no_gpu: Mutex<bool>, // CPU-only mode (no GPU offload)
     tray: Mutex<Option<tauri::tray::TrayIcon<tauri::Wry>>>,
     proxy: Mutex<Option<proxy::ProxyHandle>>, // ContextShift proxy (optional)
+    context_shift: Mutex<bool>, // whether ContextShift proxy should be active
 }
 
 #[derive(Serialize, Clone)]
@@ -169,6 +170,13 @@ fn save_settings(
     save_config_value("context_shift", serde_json::json!(context_shift));
     save_config_value("context_shift_port", serde_json::json!(context_shift_port));
     save_config_value("context_shift_keep", serde_json::json!(context_shift_keep));
+    Ok(())
+}
+
+/// Set the backend ContextShift-enabled flag (drives proxy auto-start on server start).
+#[tauri::command]
+fn set_context_shift(state: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    *state.state::<ServerState>().context_shift.lock().unwrap() = enabled;
     Ok(())
 }
 
@@ -423,8 +431,9 @@ fn start_server(state: tauri::AppHandle, args: Vec<String>) -> Result<(), String
         }
     }
 
-    // Auto-start the ContextShift proxy if enabled in the args.
-    if args.iter().any(|a| a == "--context-shift") {
+    // Auto-start the ContextShift proxy if it's enabled (persisted in state).
+    let cs_enabled = *st.context_shift.lock().unwrap();
+    if cs_enabled {
         let cs_port = args
             .iter()
             .position(|a| a == "--context-shift-port")
@@ -612,6 +621,7 @@ async fn start_proxy(
     )
     .await?;
     *st.proxy.lock().unwrap() = Some(handle);
+    *st.context_shift.lock().unwrap() = true;
     Ok(format!(
         "ContextShift proxy listening on port {}",
         listen_port
@@ -626,6 +636,7 @@ fn stop_proxy(state: tauri::AppHandle) -> Result<(), String> {
         handle.abort.store(true, std::sync::atomic::Ordering::SeqCst);
         handle.task.abort();
     }
+    *st.context_shift.lock().unwrap() = false;
     Ok(())
 }
 
@@ -816,6 +827,7 @@ pub fn run() {
             no_gpu: Mutex::new(false),
             tray: Mutex::new(None),
             proxy: Mutex::new(None),
+            context_shift: Mutex::new(false),
         })
         .setup(|app| {
             // Build the system tray with model-swap menu + toggles
@@ -863,7 +875,8 @@ pub fn run() {
             start_proxy,
             stop_proxy,
             load_settings,
-            save_settings
+            save_settings,
+            set_context_shift
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

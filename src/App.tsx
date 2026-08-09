@@ -78,6 +78,10 @@ export default function App() {
             "--context-shift-port": st.context_shift_port,
             "--context-shift-keep": st.context_shift_keep,
           }));
+          // Tell the backend the persisted enable state so auto-start works.
+          if (st.context_shift) {
+            await invoke("set_context_shift", { enabled: true }).catch(() => {});
+          }
         }
       } catch (e) {
         setError(String(e));
@@ -296,12 +300,14 @@ export default function App() {
         await invoke("stop_proxy");
         setStatus("ContextShift off");
       }
-      // Persist so it survives restarts.
+      // Persist so it survives restarts, and tell the backend the desired state.
       await invoke("save_settings", {
         contextShift: enabled,
         contextShiftPort: Number(cfg["--context-shift-port"] || 8081),
         contextShiftKeep: Number(cfg["--context-shift-keep"] || 75),
       });
+      // Keep the backend context_shift flag in sync (drives auto-start on server start).
+      await invoke("set_context_shift", { enabled }).catch(() => {});
     } catch (e) {
       setError(String(e));
     }
