@@ -995,6 +995,13 @@ function buildArgs(cfg: ConfigValues, binaryPath: string): string[] {
   const noGpu = cfg["--no-gpu"] === true;
   for (const [name, val] of Object.entries(cfg)) {
     if (name === "--no-gpu") continue; // handled below, not a real flag
+    // ContextShift settings are LlamaStudio-only (proxy toggle/port/keep), not llama.cpp flags
+    if (
+      name === "--context-shift" ||
+      name === "--context-shift-port" ||
+      name === "--context-shift-keep"
+    )
+      continue;
     if (val === "" || val === null || val === undefined) continue;
     if (typeof val === "boolean") {
       if (val) args.push(name);
