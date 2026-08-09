@@ -166,7 +166,7 @@ export default function App() {
         path,
         name: profileName || "Untitled",
         model: String(cfg["--model"] || ""),
-        binary_path: binaryPath,
+        binaryPath: binaryPath,
         config,
       });
       setProfileMsg(`Saved: ${path}`);
