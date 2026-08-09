@@ -255,35 +255,51 @@ async fn handle_conn(mut stream: TcpStream, cfg: ConnCfg) {
     };
 
     let status = resp.status();
-    let _ = write_response_head(&mut stream, status.as_u16()).await;
+    // Forward the upstream status + headers, but re-emit the body with correct
+    // chunked framing (reqwest gives us decoded bytes, so we must re-chunk).
+    let mut head = format!(
+        "HTTP/1.1 {} {}\r\n",
+        status.as_u16(),
+        status.canonical_reason().unwrap_or("OK")
+    );
+    for (k, v) in resp.headers() {
+        let kn = k.as_str().to_ascii_lowercase();
+        // Drop framing headers we will regenerate ourselves.
+        if kn == "content-length" || kn == "transfer-encoding" || kn == "connection" {
+            continue;
+        }
+        if let Ok(vs) = v.to_str() {
+            head.push_str(&format!("{}: {}\r\n", k.as_str(), vs));
+        }
+    }
+    head.push_str("Transfer-Encoding: chunked\r\n\r\n");
+    if stream.write_all(head.as_bytes()).await.is_err() {
+        return;
+    }
     let mut stream_body = resp.bytes_stream();
     while let Some(chunk) = stream_body.next().await {
         match chunk {
-            Ok(c) => {
+            Ok(c) if !c.is_empty() => {
+                if stream
+                    .write_all(format!("{:x}\r\n", c.len()).as_bytes())
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
                 if stream.write_all(&c).await.is_err() {
                     return;
                 }
+                if stream.write_all(b"\r\n").await.is_err() {
+                    return;
+                }
             }
-            Err(_) => break,
+            _ => {}
         }
     }
+    // Terminate the chunked stream.
+    let _ = stream.write_all(b"0\r\n\r\n").await;
     let _ = stream.flush().await;
-}
-
-async fn write_response_head(stream: &mut TcpStream, status: u16) -> std::io::Result<()> {
-    let reason = match status {
-        200 => "OK",
-        400 => "Bad Request",
-        404 => "Not Found",
-        500 => "Internal Server Error",
-        _ => "OK",
-    };
-    let head = format!(
-        "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nTransfer-Encoding: chunked\r\n\r\n",
-        status, reason
-    );
-    stream.write_all(head.as_bytes()).await?;
-    Ok(())
 }
 
 async fn write_simple(stream: &mut TcpStream, status: u16, msg: &str) -> std::io::Result<()> {
