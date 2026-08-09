@@ -15,10 +15,12 @@ interface Props {
   flag: FlagDef;
   value: unknown;
   onChange: (name: string, value: unknown) => void;
+  flash?: boolean;
 }
 
-export function FlagControl({ flag, value, onChange }: Props) {
+export function FlagControl({ flag, value, onChange, flash }: Props) {
   const id = `flag-${flag.name.replace(/[^a-z0-9]/gi, "")}`;
+  const rowId = `row-${id}`;
 
   const pickFile = async () => {
     const exts = flag.ext
@@ -152,7 +154,7 @@ export function FlagControl({ flag, value, onChange }: Props) {
   };
 
   return (
-    <div className={`flag-row ${flag.type === "bool" ? "flag-bool" : ""}`}>
+    <div id={rowId} className={`flag-row ${flag.type === "bool" ? "flag-bool" : ""} ${flash ? "flash" : ""}`}>
       <div className="flag-head">
         <code className="flag-name">{flag.name}</code>
         {flag.short && <span className="flag-short">{flag.short}</span>}

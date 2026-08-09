@@ -38,6 +38,11 @@ export default function App() {
   );
   const [floatTab, setFloatTab] = useState<Tab | null>(null);
   const [floatPos, setFloatPos] = useState<{ x: number; y: number }>({ x: 60, y: 90 });
+  const [flagQuery, setFlagQuery] = useState("");
+  const [flagResults, setFlagResults] = useState<
+    { name: string; short?: string; help?: string; catLabel: string }[]
+  >([]);
+  const [flashFlag, setFlashFlag] = useState<string | null>(null);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -249,6 +254,56 @@ export default function App() {
     const p = presets.find((x) => x.id === id);
     if (!p) return;
     setCfg((prev) => ({ ...prev, ...p.patch }));
+  };
+
+  // Flat index of every flag (with its category) for the flag finder.
+  const allFlags = schema.flatMap((cat) =>
+    cat.flags.map((f) => ({
+      name: f.name,
+      short: f.short,
+      help: f.help,
+      catLabel: cat.label,
+    }))
+  );
+
+  // Filter the finder as the user types (matches start of name first).
+  useEffect(() => {
+    const q = flagQuery.trim().toLowerCase();
+    if (!q) {
+      setFlagResults([]);
+      return;
+    }
+    const matches = allFlags
+      .filter(
+        (f) =>
+          f.name.toLowerCase().includes(q) ||
+          (f.short && f.short.toLowerCase().includes(q)) ||
+          (f.help && f.help.toLowerCase().includes(q)) ||
+          f.catLabel.toLowerCase().includes(q)
+      )
+      .sort((a, b) => {
+        const as = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+        const bs = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+        return as - bs;
+      })
+      .slice(0, 10);
+    setFlagResults(matches);
+  }, [flagQuery, schema]);
+
+  // Jump to a flag: switch to Configuration tab, scroll to the field, flash it.
+  const jumpToFlag = (name: string) => {
+    setFlagQuery("");
+    setFlagResults([]);
+    setActiveTab("config");
+    setFlashFlag(name);
+    // Wait for the tab/content to render, then scroll.
+    setTimeout(() => {
+      const el = document.getElementById(`row-flag-${name.replace(/[^a-z0-9]/gi, "")}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      setTimeout(() => setFlashFlag(null), 1600);
+    }, 60);
   };
 
   const detectEnv = async () => {
@@ -493,6 +548,7 @@ export default function App() {
                       flag={f}
                       value={cfg[f.name] ?? f.default}
                       onChange={onChange}
+                      flash={flashFlag === f.name}
                     />
                   ))}
                 </div>
@@ -654,6 +710,37 @@ export default function App() {
           >
             {theme === "dark" ? "🌙 Dark" : "☀️ Light"}
           </button>
+          <div className="flag-finder">
+            <input
+              className="flag-search"
+              value={flagQuery}
+              onChange={(e) => setFlagQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && flagResults.length > 0) {
+                  jumpToFlag(flagResults[0].name);
+                } else if (e.key === "Escape") {
+                  setFlagQuery("");
+                  setFlagResults([]);
+                }
+              }}
+              placeholder="🔍 find flag…"
+            />
+            {flagResults.length > 0 && (
+              <ul className="flag-results">
+                {flagResults.map((r) => (
+                  <li
+                    key={r.name}
+                    onClick={() => jumpToFlag(r.name)}
+                    className="flag-result"
+                  >
+                    <code>{r.name}</code>
+                    {r.short && <span className="flag-short">{r.short}</span>}
+                    <span className="flag-cat">{r.catLabel}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       </header>
 

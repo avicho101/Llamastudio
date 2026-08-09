@@ -752,4 +752,71 @@ button:hover {
   min-height: 160px;
 }
 
+/* ---- Flag finder ---- */
+.flag-finder {
+  position: relative;
+  margin-left: 8px;
+}
+.flag-search {
+  width: 150px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--border, #2a2f3a);
+  background: var(--bg-2, #1b1f29);
+  color: var(--text, #e6e9ef);
+  font-size: 0.85rem;
+}
+.flag-results {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 10000;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  min-width: 260px;
+  max-height: 320px;
+  overflow: auto;
+  background: var(--bg-2, #1b1f29);
+  border: 1px solid var(--border, #2a2f3a);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+.flag-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.flag-result:hover {
+  background: var(--accent, #6a44ff);
+  color: #fff;
+}
+.flag-result code {
+  font-weight: 600;
+}
+.flag-result .flag-cat {
+  margin-left: auto;
+  font-size: 0.72rem;
+  opacity: 0.7;
+}
+.flag-row.flash {
+  animation: flagFlash 1.6s ease-out;
+  border-radius: 8px;
+}
+@keyframes flagFlash {
+  0% {
+    background: var(--accent, #6a44ff);
+    box-shadow: 0 0 0 3px var(--accent, #6a44ff);
+  }
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 3px transparent;
+  }
+}
+
+
 
