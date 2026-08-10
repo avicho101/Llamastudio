@@ -34,7 +34,7 @@ export default function App() {
   const [profileName, setProfileName] = useState("");
   const [profileMsg, setProfileMsg] = useState("");
   const [theme, setTheme] = useState<"dark" | "light">(
-    () => (localStorage.getItem("llamastudio-theme") as "dark" | "light") || "dark"
+    () => (localStorage.getItem("llamastudio-theme") as "dark" | "light") || "light"
   );
   const [floatTab, setFloatTab] = useState<Tab | null>(null);
   const [floatPos, setFloatPos] = useState<{ x: number; y: number }>({ x: 60, y: 90 });
