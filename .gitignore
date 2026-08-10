@@ -27,3 +27,6 @@ llamastudio.config.json
 *.key
 .env
 LlamaStudio-setup.exe
+
+# Signing material (never commit)
+signing/
