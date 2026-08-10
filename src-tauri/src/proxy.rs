@@ -342,21 +342,8 @@ async fn handle_conn(mut stream: TcpStream, cfg: ConnCfg) {
     };
 
     let status = resp.status();
-    // Buffer the full upstream body, then forward with Content-Length framing.
-    //
-    // WHY: Goose's stream parser does NOT decode Transfer-Encoding: chunked.
-    // llama.cpp sends its SSE response Content-Length-framed (which Goose reads
-    // fine directly); if we re-chunk, Goose reads the chunk-framing hex as body
-    // garbage -> "Stream decode error". So we mirror llama.cpp: Content-Length,
-    // raw body. Tradeoff: Goose sees the reply when generation finishes, not
-    // token-by-token. Correctness over token streaming.
-    let mut body_bytes: Vec<u8> = Vec::new();
-    let mut stream_body = resp.bytes_stream();
-    while let Some(chunk) = stream_body.next().await {
-        if let Ok(c) = chunk {
-            body_bytes.extend_from_slice(&c);
-        }
-    }
+    // Collect upstream headers BEFORE consuming the body stream (bytes_stream
+    // takes ownership of resp).
     let mut head = format!(
         "HTTP/1.1 {} {}\r\n",
         status.as_u16(),
@@ -370,6 +357,22 @@ async fn handle_conn(mut stream: TcpStream, cfg: ConnCfg) {
         }
         if let Ok(vs) = v.to_str() {
             head.push_str(&format!("{}: {}\r\n", k.as_str(), vs));
+        }
+    }
+
+    // Buffer the full upstream body, then forward with Content-Length framing.
+    //
+    // WHY: Goose's stream parser does NOT decode Transfer-Encoding: chunked.
+    // llama.cpp sends its SSE response Content-Length-framed (which Goose reads
+    // fine directly); if we re-chunk, Goose reads the chunk-framing hex as body
+    // garbage -> "Stream decode error". So we mirror llama.cpp: Content-Length,
+    // raw body. Tradeoff: Goose sees the reply when generation finishes, not
+    // token-by-token. Correctness over token streaming.
+    let mut body_bytes: Vec<u8> = Vec::new();
+    let mut stream_body = resp.bytes_stream();
+    while let Some(chunk) = stream_body.next().await {
+        if let Ok(c) = chunk {
+            body_bytes.extend_from_slice(&c);
         }
     }
     head.push_str(&format!("Content-Length: {}\r\n\r\n", body_bytes.len()));
