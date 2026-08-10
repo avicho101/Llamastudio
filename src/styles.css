@@ -492,7 +492,7 @@ button:hover {
   z-index: 50;
   width: 280px;
   max-width: 70vw;
-  background: #0b0d13;
+  background: var(--bg-3);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 8px;
