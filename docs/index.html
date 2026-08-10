@@ -1,0 +1,41 @@
+# LlamaStudio
+
+**Native desktop GUI for [llama.cpp](https://github.com/ggml-org/llama.cpp)'s `llama-server`.**
+
+Complete flag control · CUDA/GPU offload · Live log streaming · Model browsing · Built-in chat · Runs fully offline.
+
+![LlamaStudio](screenshot.jpg)
+
+## Download
+
+Grab the latest signed installer from the **[Releases page](https://github.com/avicho101/Llamastudio/releases)**.
+
+## Features
+
+- Full `llama-server` flag coverage (Model & Loading, CUDA/GPU Offload, Context & Batching, RoPE Scaling, Speculative Decoding, Sampling, Chat & Templates, Multimodal Vision, Server & Network, Embeddings/Rerank, Advanced/Logging)
+- CUDA detection — reports build info + NVIDIA GPUs/VRAM via `nvidia-smi`
+- Live log streaming, chat panel, model browser, command preview
+- ContextShift proxy for long conversations
+- Profiles (`.llamaprofile`) — portable one-click configs
+- System tray with model swapping
+- Light & dark themes
+- 100% air-gapped — no telemetry, no network calls
+
+## Getting started
+
+1. Get a CUDA `llama-server.exe` from [llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases)
+2. Install LlamaStudio from Releases
+3. Set the binary path → **Detect** → pick a `.gguf` model → **▶ Start Server**
+
+## Build from source
+
+```bat
+npm install
+npm run tauri build
+```
+
+Requires Rust, Node 20+, VS2022 Build Tools. See [README](https://github.com/avicho101/Llamastudio#readme) for details.
+
+## License
+
+[MIT](https://github.com/avicho101/Llamastudio/blob/main/LICENSE) © Avraham (avicho101)

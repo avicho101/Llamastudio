@@ -1,0 +1,34 @@
+name: Bug report
+description: Report a problem with LlamaStudio
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: LlamaStudio version
+      placeholder: e.g. 0.1.3
+    validations:
+      required: true
+  - type: input
+    id: llamaserver
+    attributes:
+      label: llama-server version (from the Detect button)
+      placeholder: e.g. b10342 (157b81fe6)
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU / VRAM
+      placeholder: e.g. NVIDIA RTX PRO 1000 8GB
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What did you do, and what happened?
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Paste the relevant lines from the Logs tab, or a screenshot.

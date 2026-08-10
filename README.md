@@ -8,6 +8,8 @@ Built with **Tauri v2 + React + Rust**. Runs fully offline / air-gapped.
 
 ![LlamaStudio screenshot](docs/screenshot.jpg)
 
+**🌐 Project page:** https://avicho101.github.io/Llamastudio — **📦 Download:** [Releases](https://github.com/avicho101/Llamastudio/releases)
+
 ---
 
 ## ✨ Features
