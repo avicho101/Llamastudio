@@ -6,7 +6,7 @@ browsing, and a built-in chat panel.
 
 Built with **Tauri v2 + React + Rust**. Runs fully offline / air-gapped.
 
-![splash](src/assets/logo.png)
+![LlamaStudio screenshot](docs/screenshot.jpg)
 
 ---
 
