@@ -95,6 +95,8 @@ struct ServerState {
     tray: Mutex<Option<tauri::tray::TrayIcon<tauri::Wry>>>,
     proxy: Mutex<Option<proxy::ProxyHandle>>, // ContextShift proxy (optional)
     context_shift: Mutex<bool>, // whether ContextShift proxy should be active
+    context_shift_port: Mutex<u16>, // proxy listen port (persisted)
+    context_shift_keep: Mutex<u32>, // % of context to keep (persisted)
 }
 
 #[derive(Serialize, Clone)]
@@ -144,9 +146,9 @@ struct UiSettings {
 }
 
 #[tauri::command]
-fn load_settings() -> UiSettings {
+fn load_settings(state: tauri::AppHandle) -> UiSettings {
     let v = load_config_json();
-    UiSettings {
+    let s = UiSettings {
         context_shift: v.get("context_shift").and_then(|x| x.as_bool()).unwrap_or(false),
         context_shift_port: v
             .get("context_shift_port")
@@ -158,11 +160,18 @@ fn load_settings() -> UiSettings {
             .and_then(|x| x.as_u64())
             .map(|n| n as u32)
             .unwrap_or(75),
-    }
+    };
+    // Mirror into state so auto-start on server start uses the persisted values.
+    let st = state.state::<ServerState>();
+    *st.context_shift.lock().unwrap() = s.context_shift;
+    *st.context_shift_port.lock().unwrap() = s.context_shift_port;
+    *st.context_shift_keep.lock().unwrap() = s.context_shift_keep;
+    s
 }
 
 #[tauri::command]
 fn save_settings(
+    state: tauri::AppHandle,
     context_shift: bool,
     context_shift_port: u16,
     context_shift_keep: u32,
@@ -170,6 +179,10 @@ fn save_settings(
     save_config_value("context_shift", serde_json::json!(context_shift));
     save_config_value("context_shift_port", serde_json::json!(context_shift_port));
     save_config_value("context_shift_keep", serde_json::json!(context_shift_keep));
+    let st = state.state::<ServerState>();
+    *st.context_shift.lock().unwrap() = context_shift;
+    *st.context_shift_port.lock().unwrap() = context_shift_port;
+    *st.context_shift_keep.lock().unwrap() = context_shift_keep;
     Ok(())
 }
 
@@ -434,12 +447,9 @@ fn start_server(state: tauri::AppHandle, args: Vec<String>) -> Result<(), String
     // Auto-start the ContextShift proxy if it's enabled (persisted in state).
     let cs_enabled = *st.context_shift.lock().unwrap();
     if cs_enabled {
-        let cs_port = args
-            .iter()
-            .position(|a| a == "--context-shift-port")
-            .and_then(|i| args.get(i + 1))
-            .and_then(|s| s.parse::<u16>().ok())
-            .unwrap_or(8081);
+        // Port/keep come from persisted state (not args — buildArgs skips them).
+        let cs_port = *st.context_shift_port.lock().unwrap();
+        let keep_pct = *st.context_shift_keep.lock().unwrap();
         let host = args
             .iter()
             .position(|a| a == "--host")
@@ -458,12 +468,6 @@ fn start_server(state: tauri::AppHandle, args: Vec<String>) -> Result<(), String
             .and_then(|i| args.get(i + 1))
             .and_then(|s| s.parse::<u32>().ok())
             .unwrap_or(0);
-        let keep_pct = args
-            .iter()
-            .position(|a| a == "--context-shift-keep")
-            .and_then(|i| args.get(i + 1))
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(75);
         // Stop any existing proxy first.
         if let Some(handle) = st.proxy.lock().unwrap().take() {
             handle.abort.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -828,6 +832,8 @@ pub fn run() {
             tray: Mutex::new(None),
             proxy: Mutex::new(None),
             context_shift: Mutex::new(false),
+            context_shift_port: Mutex::new(8081),
+            context_shift_keep: Mutex::new(75),
         })
         .setup(|app| {
             // Build the system tray with model-swap menu + toggles

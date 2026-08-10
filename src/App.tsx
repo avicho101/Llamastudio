@@ -1053,6 +1053,8 @@ export default function App() {
 function buildArgs(cfg: ConfigValues, binaryPath: string): string[] {
   const args: string[] = [binaryPath];
   const noGpu = cfg["--no-gpu"] === true;
+  const grpAttnN = Number(cfg["--grp-attn-n"] ?? 1);
+  const selfExtendOn = grpAttnN > 1;
   for (const [name, val] of Object.entries(cfg)) {
     if (name === "--no-gpu") continue; // handled below, not a real flag
     // ContextShift settings are LlamaStudio-only (proxy toggle/port/keep), not llama.cpp flags
@@ -1062,6 +1064,12 @@ function buildArgs(cfg: ConfigValues, binaryPath: string): string[] {
       name === "--context-shift-keep"
     )
       continue;
+    // Self-extend: only pass --grp-attn-* when actually enabled (n > 1),
+    // because older llama-server builds reject the flag entirely.
+    if (name === "--grp-attn-n" || name === "--grp-attn-w") {
+      if (!selfExtendOn) continue;
+      if (name === "--grp-attn-w" && !(Number(val) > 0)) continue;
+    }
     if (val === "" || val === null || val === undefined) continue;
     if (typeof val === "boolean") {
       if (val) args.push(name);

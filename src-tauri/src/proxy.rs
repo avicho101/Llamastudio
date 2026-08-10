@@ -80,25 +80,31 @@ pub struct ProxyHandle {
 fn kill_listener_on_port(port: u16) {
     #[cfg(target_os = "windows")]
     {
-        // Find the PID(s) listening on the port.
+        // Find the PID(s) listening on the port. Match both IPv4 (:8081) and
+        // IPv6 ([::]:8081 / [0:0:0:0:0:0:0:0]:8081) forms.
         if let Ok(out) = std::process::Command::new("netstat")
             .args(["-ano"])
             .output()
         {
             let text = String::from_utf8_lossy(&out.stdout).to_string();
-            let needle = format!(":{}", port);
             for line in text.lines() {
-                if line.contains(&needle) {
-                    let lower = line.to_lowercase();
-                    if !lower.contains("listening") && !lower.contains("listen") {
-                        continue;
-                    }
-                    if let Some(pid) = line.split_whitespace().last() {
-                        if let Ok(pid) = pid.parse::<u32>() {
-                            let _ = std::process::Command::new("taskkill")
-                                .args(["/F", "/PID", &pid.to_string()])
-                                .output();
+                let lower = line.to_lowercase();
+                if !lower.contains("listen") {
+                    continue;
+                }
+                let has_port = line.contains(&format!(":{}", port))
+                    || line.contains(&format!("]:{}", port));
+                if !has_port {
+                    continue;
+                }
+                if let Some(pid) = line.split_whitespace().last() {
+                    if let Ok(pid) = pid.parse::<u32>() {
+                        if pid == std::process::id() {
+                            continue; // never kill ourselves
                         }
+                        let _ = std::process::Command::new("taskkill")
+                            .args(["/F", "/PID", &pid.to_string()])
+                            .output();
                     }
                 }
             }
@@ -109,6 +115,42 @@ fn kill_listener_on_port(port: u16) {
         let _ = std::process::Command::new("fuser")
             .args(["-k", &format!("{}/tcp", port)])
             .output();
+    }
+}
+
+/// Bind the proxy listener, retrying after killing any stale listener on the
+/// port. On Windows the OS may take a moment to release a killed socket.
+async fn bind_with_retry(
+    addr: &str,
+    listen_port: u16,
+    app: &tauri::AppHandle,
+) -> Result<TcpListener, String> {
+    match TcpListener::bind(addr).await {
+        Ok(l) => Ok(l),
+        Err(e) => {
+            let msg = e.to_string();
+            let mut last_err = e;
+            for attempt in 0..4 {
+                push_proxy_log(
+                    app,
+                    &format!(
+                        "[ContextShift] port {} in use (attempt {}), killing stale listener...",
+                        listen_port,
+                        attempt + 1
+                    ),
+                );
+                kill_listener_on_port(listen_port);
+                tokio::time::sleep(std::time::Duration::from_millis(600 + 400 * attempt)).await;
+                match TcpListener::bind(addr).await {
+                    Ok(l) => return Ok(l),
+                    Err(e2) => last_err = e2,
+                }
+            }
+            Err(format!(
+                "Failed to bind ContextShift proxy on {}: {} (still busy after killing stale listener: {})",
+                addr, msg, last_err
+            ))
+        }
     }
 }
 
@@ -125,26 +167,7 @@ pub async fn start_proxy(
     app: tauri::AppHandle,
 ) -> Result<ProxyHandle, String> {
     let addr = format!("{}:{}", listen_host, listen_port);
-    let listener = match TcpListener::bind(&addr).await {
-        Ok(l) => l,
-        Err(e) => {
-            // Port in use — likely a stale proxy from a previous session.
-            // Kill the listener and retry once before giving up.
-            let msg = e.to_string();
-            push_proxy_log(&app, &format!("[ContextShift] port {} in use, killing stale listener...", listen_port));
-            kill_listener_on_port(listen_port);
-            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-            match TcpListener::bind(&addr).await {
-                Ok(l) => l,
-                Err(e2) => {
-                    return Err(format!(
-                        "Failed to bind ContextShift proxy on {}: {} (also after killing stale listener: {})",
-                        addr, msg, e2
-                    ))
-                }
-            }
-        }
-    };
+    let listener = bind_with_retry(&addr, listen_port, &app).await?;
 
     let abort = Arc::new(AtomicBool::new(false));
     let abort_task = abort.clone();
