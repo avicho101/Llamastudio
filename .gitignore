@@ -1,7 +1,7 @@
 # Rust / Cargo
 /target/
 **/target/
-Cargo.lock
+# Cargo.lock is intentionally committed (app crate — reproducible CI builds)
 
 # Node / frontend
 node_modules/
