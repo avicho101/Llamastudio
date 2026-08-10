@@ -82,6 +82,7 @@ fn resolve_binary(configured: &str) -> Option<String> {
 mod nvidia;
 mod schema_server;
 mod tray;
+mod jobobj;
 
 // Shared state for the running server process + log sink
 struct ServerState {
@@ -97,6 +98,7 @@ struct ServerState {
     context_shift: Mutex<bool>, // whether ContextShift proxy should be active
     context_shift_port: Mutex<u16>, // proxy listen port (persisted)
     context_shift_keep: Mutex<u32>, // % of context to keep (persisted)
+    job: Mutex<Option<jobobj::JobObject>>, // Windows job (child dies with app)
 }
 
 #[derive(Serialize, Clone)]
@@ -427,6 +429,17 @@ fn start_server(state: tauri::AppHandle, args: Vec<String>) -> Result<(), String
         Err(e) => return Err(format!("Failed to launch server: {}", e)),
     };
 
+    // Assign the child to a Windows Job Object so it is killed automatically
+    // when this app process exits — even on crash/force-kill. This prevents
+    // orphaned llama-server.exe processes that keep holding VRAM and ports.
+    let job = jobobj::JobObject::new();
+    if let Some(j) = &job {
+        if !j.assign(&child) {
+            push_log(&state, "WARN: could not assign server to job (orphan protection off)");
+        }
+    }
+    *st.job.lock().unwrap() = job;
+
     // Mark started
     *st.started_at.lock().unwrap() = Some(Instant::now());
 
@@ -582,6 +595,9 @@ fn stop_server(state: tauri::AppHandle) -> Result<(), String> {
         let _ = child.kill();
         let _ = child.wait();
         *st.started_at.lock().unwrap() = None;
+        // Drop the job handle — the child is already killed; KILL_ON_JOB_CLOSE
+        // only matters if THIS process dies while the child is still running.
+        *st.job.lock().unwrap() = None;
         push_log(&state, "--- server stopped ---");
         drop(guard);
         // Stop the ContextShift proxy if it was running.
@@ -834,6 +850,7 @@ pub fn run() {
             context_shift: Mutex::new(false),
             context_shift_port: Mutex::new(8081),
             context_shift_keep: Mutex::new(75),
+            job: Mutex::new(None),
         })
         .setup(|app| {
             // Build the system tray with model-swap menu + toggles
