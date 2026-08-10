@@ -2,6 +2,22 @@
 
 All notable changes to LlamaStudio are documented here.
 
+## [Unreleased]
+
+### Added
+- **Completely rebuilt chat panel** (LM Studio-style):
+  - Streaming responses with stop button (no more waiting for full answers)
+  - Markdown rendering: headings, lists, tables, links, syntax-highlighted code blocks with copy button
+  - Collapsible "thinking" block when the model emits reasoning
+  - Message actions: copy, delete, retry last, clear conversation
+  - Auto-scroll, typing indicator, timestamps
+- **Tool calling & skills**: the model can call enabled tools mid-chat and continue:
+  - `list_files`, `read_file`, `list_drives` (scoped to a user-set workspace — safe, can't escape)
+  - `calculate` (safe math), `get_current_time`, `fetch_url` (opt-in, needs internet)
+  - Skills panel to enable/disable tools + set the workspace
+  - Tool calls render as inline cards with args + result, up to 6 rounds per message
+- Chat routes through the ContextShift proxy when enabled (long-conversation trimming)
+
 ## [0.1.3] - 2026-08-11
 
 ### Changed

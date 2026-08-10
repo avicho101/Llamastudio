@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex};
 use std::time::{Duration, Instant};
@@ -816,6 +816,110 @@ fn profile_from_args(args: &[String]) -> Option<String> {
         .cloned()
 }
 
+/// Chat agent tool executor — safe, workspace-scoped file operations.
+/// `tool` is one of: "list_files", "read_file", "list_drives".
+/// `workspace` is the root directory the agent is allowed to touch.
+/// `arg` is the tool argument (path for list/read).
+#[tauri::command]
+fn chat_tool_exec(
+    tool: String,
+    workspace: String,
+    arg: String,
+) -> Result<serde_json::Value, String> {
+    use std::path::Path;
+
+    // Resolve the workspace root (fall back to C:\ if empty).
+    let ws = if workspace.trim().is_empty() {
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("C:\\"))
+    } else {
+        PathBuf::from(&workspace)
+    };
+    let ws_canon = ws.canonicalize().unwrap_or(ws.clone());
+
+    match tool.as_str() {
+        "list_drives" => {
+            // Enumerate fixed drives for the workspace picker.
+            let mut drives = Vec::new();
+            for letter in b'A'..=b'Z' {
+                let root = format!("{}:\\", letter as char);
+                if Path::new(&root).exists() {
+                    drives.push(root);
+                }
+            }
+            Ok(serde_json::json!({ "drives": drives }))
+        }
+        "list_files" => {
+            let mut target = PathBuf::from(&arg);
+            if target.is_relative() {
+                target = ws_canon.join(target);
+            }
+            // Scope check: must stay inside the workspace.
+            let target_canon = target.canonicalize().unwrap_or(target.clone());
+            if !target_canon.starts_with(&ws_canon) {
+                return Err(format!(
+                    "Path '{}' is outside the workspace '{}'",
+                    target_canon.display(),
+                    ws_canon.display()
+                ));
+            }
+            if !target_canon.is_dir() {
+                return Err("Not a directory".into());
+            }
+            let mut entries: Vec<serde_json::Value> = Vec::new();
+            if let Ok(rd) = std::fs::read_dir(&target_canon) {
+                for e in rd.flatten() {
+                    let is_dir = e
+                        .file_type()
+                        .map(|t| t.is_dir())
+                        .unwrap_or(false);
+                    let name = e.file_name().to_string_lossy().to_string();
+                    let size = e
+                        .metadata()
+                        .map(|m| m.len())
+                        .unwrap_or(0);
+                    entries.push(serde_json::json!({
+                        "name": name,
+                        "is_dir": is_dir,
+                        "size": size,
+                    }));
+                }
+            }
+            entries.sort_by(|a, b| {
+                let ad = a["is_dir"].as_bool().unwrap_or(false);
+                let bd = b["is_dir"].as_bool().unwrap_or(false);
+                bd.cmp(&ad).then(a["name"].as_str().cmp(&b["name"].as_str()))
+            });
+            Ok(serde_json::json!({ "path": target_canon.to_string_lossy(), "entries": entries }))
+        }
+        "read_file" => {
+            let mut target = PathBuf::from(&arg);
+            if target.is_relative() {
+                target = ws_canon.join(target);
+            }
+            let target_canon = target.canonicalize().unwrap_or(target.clone());
+            if !target_canon.starts_with(&ws_canon) {
+                return Err(format!(
+                    "Path '{}' is outside the workspace '{}'",
+                    target_canon.display(),
+                    ws_canon.display()
+                ));
+            }
+            if !target_canon.is_file() {
+                return Err("Not a file".into());
+            }
+            // Cap read size to 256 KB to avoid flooding the context.
+            let meta = std::fs::metadata(&target_canon).map_err(|e| e.to_string())?;
+            if meta.len() > 256 * 1024 {
+                return Err("File too large to read (max 256 KB)".into());
+            }
+            let content =
+                std::fs::read_to_string(&target_canon).map_err(|e| format!("Read error: {}", e))?;
+            Ok(serde_json::json!({ "path": target_canon.to_string_lossy(), "content": content }))
+        }
+        other => Err(format!("Unknown tool: {}", other)),
+    }
+}
+
 pub fn run() {
     let default_binary = default_binary_path();
     // Check for a .llamaprofile passed on the command line (double-click launch).
@@ -899,7 +1003,8 @@ pub fn run() {
             stop_proxy,
             load_settings,
             save_settings,
-            set_context_shift
+            set_context_shift,
+            chat_tool_exec
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

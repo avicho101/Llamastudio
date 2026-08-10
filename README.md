@@ -24,7 +24,11 @@ Built with **Tauri v2 + React + Rust**. Runs fully offline / air-gapped.
 - 📜 **Live log streaming** — server stdout/stderr stream into the Logs tab in
   real time.
 - 💬 **Chat panel** — talk to the running model via the OpenAI-compatible
-  `/v1/chat/completions` endpoint.
+  `/v1/chat/completions` endpoint: streaming responses, Markdown rendering,
+  syntax-highlighted code blocks, and collapsible reasoning.
+- 🧰 **Tools & skills** — enable file tools (scoped to a workspace), math,
+  time, and web fetch; the model calls them mid-conversation and continues
+  (rendered as inline tool cards).
 - 📂 **Model browser** — scan a folder of `.gguf` files, click to select.
 - 📋 **Command preview** — see the exact `llama-server` CLI it will run
   (copy it to run manually if you prefer).

@@ -4,12 +4,14 @@ import {
   ConfigValues,
   DeviceInfo,
   EnvStatus,
-  ChatMsg,
 } from "./types";
 import { DEFAULT_CONFIG } from "./types";
 import { FlagControl, InfoTip } from "./FlagControl";
 import { invoke, openFileDialog, openDirDialog, saveDialog } from "./tauri";
 import logo from "./assets/logo.png";
+import ChatPanel from "./ChatPanel";
+import { buildTools } from "./tools";
+import type { ChatTool } from "./chatTypes";
 
 type Tab = "config" | "logs" | "chat" | "profiles";
 
@@ -49,9 +51,14 @@ export default function App() {
     localStorage.setItem("llamastudio-theme", theme);
   }, [theme]);
 
-  const [chat, setChat] = useState<ChatMsg[]>([]);
-  const [input, setInput] = useState("");
-  const [streaming, setStreaming] = useState(false);
+  const [chatTools, setChatTools] = useState<ChatTool[]>(() => buildTools());
+  const [workspace, setWorkspace] = useState(
+    () => localStorage.getItem("llamastudio-workspace") || "C:\\Users\\hjb834"
+  );
+
+  useEffect(() => {
+    localStorage.setItem("llamastudio-workspace", workspace);
+  }, [workspace]);
 
   // Load schema + binary path on mount
   useEffect(() => {
@@ -476,45 +483,6 @@ export default function App() {
     }
   };
 
-  const sendChat = async () => {
-    if (!input.trim() || streaming) return;
-    const msg: ChatMsg = { role: "user", content: input };
-    const next = [...chat, msg];
-    setChat(next);
-    setInput("");
-    setStreaming(true);
-    const host = String(cfg["--host"] || "127.0.0.1");
-    const port = Number(cfg["--port"] || 8080);
-    const key = String(cfg["--api-key"] || "");
-    try {
-      const res = await fetch(`http://${host}:${port}/v1/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(key ? { Authorization: `Bearer ${key}` } : {}),
-        },
-        body: JSON.stringify({
-          model: "local",
-          messages: next.map((m) => ({ role: m.role, content: m.content })),
-          stream: false,
-        }),
-      });
-      if (!res.ok) {
-        setError(`Chat error: ${res.status}`);
-        setStreaming(false);
-        return;
-      }
-      const data = await res.json();
-      const content: string =
-        data?.choices?.[0]?.message?.content ?? "(no content)";
-      setChat((prev) => [...prev, { role: "assistant", content }]);
-    } catch (e) {
-      setError(`Chat failed: ${String(e)}`);
-    } finally {
-      setStreaming(false);
-    }
-  };
-
   const renderTab = (tab: Tab) => {
     if (tab === "config") {
       return (
@@ -634,42 +602,24 @@ export default function App() {
       );
     }
     if (tab === "chat") {
+      const host = String(cfg["--host"] || "127.0.0.1");
+      const proxyEnabled = Boolean(cfg["--context-shift"]);
+      // Route through the ContextShift proxy when enabled (it trims history
+      // to fit -c), otherwise talk to llama-server directly.
+      const port = proxyEnabled
+        ? Number(cfg["--context-shift-port"] ?? 8081)
+        : Number(cfg["--port"] || 8080);
+      const key = String(cfg["--api-key"] || "");
       return (
-        <div className="chat-panel">
-          <div className="chat-history">
-            {chat.length === 0 && (
-              <div className="chat-empty">
-                Start a conversation with your model. Make sure the server is
-                running.
-              </div>
-            )}
-            {chat.map((m, i) => (
-              <div key={i} className={`bubble ${m.role}`}>
-                {m.content}
-              </div>
-            ))}
-          </div>
-          <div className="chat-input">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  sendChat();
-                }
-              }}
-              placeholder="Type a message… (Enter to send)"
-            />
-            <button
-              className="btn-primary"
-              onClick={sendChat}
-              disabled={streaming}
-            >
-              {streaming ? "…" : "Send"}
-            </button>
-          </div>
-        </div>
+        <ChatPanel
+          baseUrl={`http://${host}:${port}/v1`}
+          apiKey={key}
+          model={String(cfg["--model"] || "local")}
+          tools={chatTools}
+          workspace={workspace}
+          onWorkspaceChange={setWorkspace}
+          onToolsChange={setChatTools}
+        />
       );
     }
     // profiles
