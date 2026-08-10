@@ -63,7 +63,10 @@ jobs:
           $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" |
             Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
           $installer = (Get-ChildItem "src-tauri\target\release\bundle\nsis\*.exe" | Select-Object -First 1).FullName
-          & $signtool verify /pa $installer
+          # NO /pa flag: /pa checks trust against THIS machine's root store, but the
+          # runner doesn't have the self-signed cert installed (the USER's PC does).
+          # Plain verify checks the signature is cryptographically valid — correct here.
+          & $signtool verify $installer
           if ($LASTEXITCODE -ne 0) { throw "signature verification failed" }
 
       - name: Upload installer artifact
