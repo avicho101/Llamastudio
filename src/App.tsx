@@ -842,6 +842,26 @@ export default function App() {
         </div>
         <div className="quick-field">
           <label>
+            KV Cache <span className="q-sub">(K/V)</span>
+            <InfoTip text="KV cache data type. q8_0 halves KV memory vs f16 (best on 8GB cards, ~2x compression, <5% speed hit). Use q8_0 when you get CUDA out-of-memory on load. Applies to both K and V." />
+          </label>
+          <select
+            value={String(cfg["--cache-type-k"] ?? "f16")}
+            onChange={(e) => {
+              const v = e.target.value;
+              onChange("--cache-type-k", v);
+              onChange("--cache-type-v", v);
+            }}
+          >
+            {["f16", "q8_0", "bf16", "f32", "q4_0"].map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="quick-field">
+          <label>
             GPU Layers <span className="q-sub">(-ngl)</span>
             <InfoTip text="How many model layers to offload to your GPU (VRAM). 'auto' fills VRAM, 'all' forces everything to GPU. Lower it if you run out of VRAM." />
           </label>

@@ -57,6 +57,8 @@ export const DEFAULT_CONFIG: ConfigValues = {
   "--n-gpu-layers": "auto",
   "--no-gpu": false, // CPU-only mode (no GPU offload)
   "--ctx-size": 0,
+  "--grp-attn-n": 1,
+  "--grp-attn-w": 512,
   "--flash-attn": "auto",
   "--cache-type-k": "f16",
   "--cache-type-v": "f16",

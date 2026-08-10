@@ -74,6 +74,44 @@ pub struct ProxyHandle {
     pub task: tokio::task::JoinHandle<()>,
 }
 
+/// Kill whatever process is currently listening on `port` (best-effort).
+/// On Windows: netstat -ano | findstr :PORT, then taskkill /F /PID.
+/// On Unix: fuser -k PORT/tcp (or lsof fallback).
+fn kill_listener_on_port(port: u16) {
+    #[cfg(target_os = "windows")]
+    {
+        // Find the PID(s) listening on the port.
+        if let Ok(out) = std::process::Command::new("netstat")
+            .args(["-ano"])
+            .output()
+        {
+            let text = String::from_utf8_lossy(&out.stdout).to_string();
+            let needle = format!(":{}", port);
+            for line in text.lines() {
+                if line.contains(&needle) {
+                    let lower = line.to_lowercase();
+                    if !lower.contains("listening") && !lower.contains("listen") {
+                        continue;
+                    }
+                    if let Some(pid) = line.split_whitespace().last() {
+                        if let Ok(pid) = pid.parse::<u32>() {
+                            let _ = std::process::Command::new("taskkill")
+                                .args(["/F", "/PID", &pid.to_string()])
+                                .output();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = std::process::Command::new("fuser")
+            .args(["-k", &format!("{}/tcp", port)])
+            .output();
+    }
+}
+
 /// Start the ContextShift proxy. Listens on `listen_host:listen_port` and
 /// forwards to `target_host:target_port` (llama.cpp). `ctx_size` is the server's
 /// `-c`; `keep_pct` is the share of context (1..100) kept for recent messages.
@@ -87,9 +125,26 @@ pub async fn start_proxy(
     app: tauri::AppHandle,
 ) -> Result<ProxyHandle, String> {
     let addr = format!("{}:{}", listen_host, listen_port);
-    let listener = TcpListener::bind(&addr)
-        .await
-        .map_err(|e| format!("Failed to bind ContextShift proxy on {}: {}", addr, e))?;
+    let listener = match TcpListener::bind(&addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            // Port in use — likely a stale proxy from a previous session.
+            // Kill the listener and retry once before giving up.
+            let msg = e.to_string();
+            push_proxy_log(&app, &format!("[ContextShift] port {} in use, killing stale listener...", listen_port));
+            kill_listener_on_port(listen_port);
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            match TcpListener::bind(&addr).await {
+                Ok(l) => l,
+                Err(e2) => {
+                    return Err(format!(
+                        "Failed to bind ContextShift proxy on {}: {} (also after killing stale listener: {})",
+                        addr, msg, e2
+                    ))
+                }
+            }
+        }
+    };
 
     let abort = Arc::new(AtomicBool::new(false));
     let abort_task = abort.clone();
@@ -119,6 +174,15 @@ pub async fn start_proxy(
     });
 
     Ok(ProxyHandle { abort, task })
+}
+
+/// Log a line to the app's Logs tab (used by the proxy module).
+fn push_proxy_log(app: &tauri::AppHandle, line: &str) {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let _ = app.emit("server-log", crate::LogLine { line: line.to_string(), ts });
 }
 
 struct ConnCfg {

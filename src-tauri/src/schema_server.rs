@@ -116,6 +116,8 @@ pub fn schema_json() -> Value {
             label: "Context & Batching".into(),
             flags: vec![
                 f("--ctx-size", Some("-c"), "int", i(0), "Prompt context size (0 = model default). Raise this for long contexts.", None, Some(0), None, None, false),
+                f("--grp-attn-n", Some("-gan"), "int", i(1), "Self-extend group attention factor (1 = disabled). Extends effective context beyond trained length. Used with --grp-attn-w. E.g. 4 with -c 32768 gives ~128k effective.", None, Some(1), None, None, false),
+                f("--grp-attn-w", Some("-gaw"), "int", i(512), "Self-extend group attention width (tokens per group, default 512). Used with --grp-attn-n.", None, Some(1), None, None, false),
                 f("--predict", Some("-n"), "int", i(-1), "Tokens to predict (-1 = infinity).", None, Some(-1), None, None, false),
                 f("--batch-size", Some("-b"), "int", i(2048), "Logical max batch size.", None, Some(1), None, None, false),
                 f("--ubatch-size", Some("-ub"), "int", i(512), "Physical max batch size.", None, Some(1), None, None, false),
@@ -319,6 +321,21 @@ pub fn presets_json() -> Value {
             "Big context window, more VRAM.",
             vec![
                 ("--ctx-size".into(), i(32768)),
+                ("--batch-size".into(), i(2048)),
+                ("--n-gpu-layers".into(), s("auto")),
+                ("--flash-attn".into(), s("on")),
+            ],
+        ),
+        mk(
+            "self-extend",
+            "Self-Extend (GrpAttn)",
+            "Extend effective context ~4x via grouped attention (StreamingLLM-style). Uses q8_0 KV to save VRAM.",
+            vec![
+                ("--ctx-size".into(), i(32768)),
+                ("--grp-attn-n".into(), i(4)),
+                ("--grp-attn-w".into(), i(512)),
+                ("--cache-type-k".into(), s("q8_0")),
+                ("--cache-type-v".into(), s("q8_0")),
                 ("--batch-size".into(), i(2048)),
                 ("--n-gpu-layers".into(), s("auto")),
                 ("--flash-attn".into(), s("on")),
