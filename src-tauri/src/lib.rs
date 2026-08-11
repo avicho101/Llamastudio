@@ -825,16 +825,18 @@ fn chat_tool_exec(
     tool: String,
     workspace: String,
     arg: String,
+    full_access: bool,
 ) -> Result<serde_json::Value, String> {
     use std::path::Path;
 
-    // Resolve the workspace root (fall back to C:\ if empty).
-    let ws = if workspace.trim().is_empty() {
+    // Resolve the workspace root. In full-access mode there is no sandbox.
+    let ws_canon: PathBuf = if full_access {
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("C:\\"))
+    } else if workspace.trim().is_empty() {
         std::env::current_dir().unwrap_or_else(|_| PathBuf::from("C:\\"))
     } else {
-        PathBuf::from(&workspace)
+        PathBuf::from(&workspace).canonicalize().unwrap_or(PathBuf::from(&workspace))
     };
-    let ws_canon = ws.canonicalize().unwrap_or(ws.clone());
 
     match tool.as_str() {
         "list_drives" => {
@@ -853,9 +855,9 @@ fn chat_tool_exec(
             if target.is_relative() {
                 target = ws_canon.join(target);
             }
-            // Scope check: must stay inside the workspace.
+            // Scope check: must stay inside the workspace (unless full access).
             let target_canon = target.canonicalize().unwrap_or(target.clone());
-            if !target_canon.starts_with(&ws_canon) {
+            if !full_access && !target_canon.starts_with(&ws_canon) {
                 return Err(format!(
                     "Path '{}' is outside the workspace '{}'",
                     target_canon.display(),
@@ -897,7 +899,7 @@ fn chat_tool_exec(
                 target = ws_canon.join(target);
             }
             let target_canon = target.canonicalize().unwrap_or(target.clone());
-            if !target_canon.starts_with(&ws_canon) {
+            if !full_access && !target_canon.starts_with(&ws_canon) {
                 return Err(format!(
                     "Path '{}' is outside the workspace '{}'",
                     target_canon.display(),

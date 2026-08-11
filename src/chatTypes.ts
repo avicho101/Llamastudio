@@ -47,6 +47,7 @@ export interface ChatTool {
 
 export interface ToolCtx {
   workspace: string;
+  fullAccess: boolean;
   baseUrl: string; // server base for web tools if any
 }
 

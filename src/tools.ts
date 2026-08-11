@@ -118,7 +118,8 @@ export function buildTools(): ChatTool[] {
       executor: async (args, c) => {
         const r = await invoke("chat_tool_exec", {
           tool: "list_files",
-          workspace: c.workspace,
+          workspace: c.fullAccess ? "" : c.workspace,
+          fullAccess: c.fullAccess,
           arg: String(args.path ?? "."),
         });
         return truncate(JSON.stringify(r, null, 2), 6000);
@@ -145,7 +146,8 @@ export function buildTools(): ChatTool[] {
       executor: async (args, c) => {
         const r = await invoke("chat_tool_exec", {
           tool: "read_file",
-          workspace: c.workspace,
+          workspace: c.fullAccess ? "" : c.workspace,
+          fullAccess: c.fullAccess,
           arg: String(args.path ?? ""),
         });
         return truncate(JSON.stringify(r, null, 2), 8000);

@@ -139,6 +139,9 @@ export default function ChatPanel({
   const [streaming, setStreaming] = useState(false);
   const [pendingTools, setPendingTools] = useState<PendingTool[]>([]);
   const [showSkills, setShowSkills] = useState(false);
+  const [fullAccess, setFullAccess] = useState(
+    () => localStorage.getItem("llamastudio-fullaccess") === "1"
+  );
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -158,12 +161,13 @@ export default function ChatPanel({
       "You are LlamaStudio, a helpful local AI assistant running entirely on the user's machine. " +
       "Answer accurately and concisely. Use the provided tools when they help — e.g. list_files / read_file " +
       "to inspect files in the workspace, calculate for math, get_current_time for dates. " +
-      `Your file access is sandboxed to the workspace: ${workspace || "(not set)"}. ` +
-      "Paths outside it are blocked — if asked to access something outside the workspace, say so and " +
-      "offer to list inside the workspace instead. " +
+      `Your file access is ${fullAccess ? "NOT sandboxed — you can list/read files anywhere on this PC." : `sandboxed to the workspace: ${workspace || "(not set)"}`} ` +
+      (fullAccess
+        ? ""
+        : "Paths outside it are blocked — if asked to access something outside the workspace, say so and offer to list inside the workspace instead. ") +
       "If you cannot complete a request with the available tools, say so clearly. " +
       "Format answers with Markdown (headings, lists, code blocks) for readability.",
-    [workspace]
+    [workspace, fullAccess]
   );
 
   const handleSend = async () => {
@@ -186,7 +190,7 @@ export default function ChatPanel({
       { id: asstId, role: "assistant", content: "", ts: Date.now() },
     ]);
 
-    const ctx = { workspace, baseUrl: baseUrl.replace(/\/$/, ""), apiKey };
+    const ctx = { workspace, fullAccess, baseUrl: baseUrl.replace(/\/$/, ""), apiKey };
     const history = newMessages.map((m) => ({
       role: m.role === "tool" ? ("tool" as const) : m.role,
       content: m.content,
@@ -312,6 +316,7 @@ export default function ChatPanel({
                 value={workspace}
                 onChange={(e) => onWorkspaceChange(e.target.value)}
                 placeholder="C:\Users\you\projects"
+                disabled={fullAccess}
               />
               <button
                 className="btn-small"
@@ -322,13 +327,33 @@ export default function ChatPanel({
                   } catch {}
                 }}
                 title="Browse folder"
+                disabled={fullAccess}
               >
                 📂
               </button>
             </div>
+            <div className="full-access-row">
+              <span className="skill-info">
+                <span className="skill-name">Full filesystem access</span>
+                <span className="skill-desc">
+                  Let the model read/list anywhere on this PC (ignores the workspace sandbox).
+                </span>
+              </span>
+              <button
+                className={`toggle ${fullAccess ? "on" : ""}`}
+                onClick={() => {
+                  const next = !fullAccess;
+                  setFullAccess(next);
+                  localStorage.setItem("llamastudio-fullaccess", next ? "1" : "0");
+                }}
+                title={fullAccess ? "Restrict to workspace" : "Allow anywhere"}
+              >
+                <span className="knob" />
+              </button>
+            </div>
             <p className="muted small">
-              File tools are scoped to this folder — the model cannot read or list
-              anything outside it. Set it to <code>C:\</code> to allow whole-drive access.
+              File tools are scoped to the workspace by default. Enable Full filesystem access to
+              let the model list/read files anywhere on the PC.
             </p>
           </div>
           <div className="skills-list">
