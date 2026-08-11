@@ -265,7 +265,7 @@ async fn handle_conn(mut stream: TcpStream, cfg: ConnCfg) {
                 b"HTTP/1.1 204 No Content\r\n\
                   Access-Control-Allow-Origin: *\r\n\
                   Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n\
-                  Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With\r\n\
+                  Access-Control-Allow-Headers: *\r\n\
                   Access-Control-Max-Age: 86400\r\n\
                   Content-Length: 0\r\n\
                   Connection: keep-alive\r\n\r\n",

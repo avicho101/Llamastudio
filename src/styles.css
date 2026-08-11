@@ -204,6 +204,16 @@ button:hover {
   padding: 16px;
 }
 
+/* Chat tab stays mounted (hidden when inactive) so conversation survives
+   tab switches. The frame must fill the content area for the chat panel. */
+.tab-frame {
+  height: 100%;
+  min-height: 400px;
+}
+.tab-frame .chat-panel {
+  height: 100%;
+}
+
 /* Config layout */
 .config-layout {
   display: grid;

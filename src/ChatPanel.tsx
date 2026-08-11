@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import hljs from "highlight.js";
-import { invoke } from "@tauri-apps/api/core";
+import { openDirDialog } from "./tauri";
 import type { ChatMsg, ChatTool, ToolCallArg, ToolResult } from "./chatTypes";
 import { streamChat } from "./streamChat";
 import { enabledDefs, runTool } from "./tools";
@@ -158,9 +158,12 @@ export default function ChatPanel({
       "You are LlamaStudio, a helpful local AI assistant running entirely on the user's machine. " +
       "Answer accurately and concisely. Use the provided tools when they help — e.g. list_files / read_file " +
       "to inspect files in the workspace, calculate for math, get_current_time for dates. " +
+      `Your file access is sandboxed to the workspace: ${workspace || "(not set)"}. ` +
+      "Paths outside it are blocked — if asked to access something outside the workspace, say so and " +
+      "offer to list inside the workspace instead. " +
       "If you cannot complete a request with the available tools, say so clearly. " +
       "Format answers with Markdown (headings, lists, code blocks) for readability.",
-    []
+    [workspace]
   );
 
   const handleSend = async () => {
@@ -314,21 +317,18 @@ export default function ChatPanel({
                 className="btn-small"
                 onClick={async () => {
                   try {
-                    const res = await invoke<string>("list_drives") as any;
-                    const drives = (res?.drives || []) as string[];
-                    if (drives.length) {
-                      // pick first drive as quick default
-                      onWorkspaceChange(`${drives[0]}Users\\`);
-                    }
+                    const dir = await openDirDialog({ title: "Select workspace folder" });
+                    if (typeof dir === "string") onWorkspaceChange(dir);
                   } catch {}
                 }}
-                title="Pick drive"
+                title="Browse folder"
               >
-                📁
+                📂
               </button>
             </div>
             <p className="muted small">
-              File tools are scoped to this folder. Server must be running for tools that need it.
+              File tools are scoped to this folder — the model cannot read or list
+              anything outside it. Set it to <code>C:\</code> to allow whole-drive access.
             </p>
           </div>
           <div className="skills-list">

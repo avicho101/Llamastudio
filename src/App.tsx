@@ -962,7 +962,12 @@ export default function App() {
       <main className="content">
         {activeTab === "config" && renderTab("config")}
         {activeTab === "logs" && renderTab("logs")}
-        {activeTab === "chat" && renderTab("chat")}
+        <div
+          className="tab-frame"
+          style={{ display: activeTab === "chat" ? "block" : "none" }}
+        >
+          {renderTab("chat")}
+        </div>
         {activeTab === "profiles" && renderTab("profiles")}
       </main>
 
