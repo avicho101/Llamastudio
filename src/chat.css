@@ -444,7 +444,8 @@
   border-radius: 5px;
   font-family: var(--mono, monospace);
   font-size: 0.82em;
-  color: #79c0ff;
+  color: var(--text, #1b1f29);
+  font-weight: 600;
 }
 
 /* Code blocks */
@@ -709,44 +710,35 @@
   background: #dc2626;
 }
 
-/* Syntax highlighting overrides — replace the pink/magenta from the
-   github-dark theme with a calmer, more readable palette. */
+/* Syntax highlighting — no colors; bold weight for emphasis so code stays
+   readable on the dark block background. */
+.code-block pre,
+.code-block code {
+  color: #d7dce4;
+}
 .code-block .hljs-keyword,
 .code-block .hljs-selector-tag,
-.code-block .hljs-literal {
-  color: #79c0ff;
-}
-.code-block .hljs-string,
-.code-block .hljs-regexp,
-.code-block .hljs-addition {
-  color: #7ee787;
-}
+.code-block .hljs-literal,
 .code-block .hljs-title,
 .code-block .hljs-function,
-.code-block .hljs-section {
-  color: #ffa657;
-}
-.code-block .hljs-comment,
-.code-block .hljs-quote {
-  color: #8b949e;
-  font-style: italic;
-}
+.code-block .hljs-section,
+.code-block .hljs-built_in,
+.code-block .hljs-type,
+.code-block .hljs-class .hljs-title,
+.code-block .hljs-string,
+.code-block .hljs-regexp,
 .code-block .hljs-number,
 .code-block .hljs-symbol,
-.code-block .hljs-bullet {
-  color: #79c0ff;
-}
 .code-block .hljs-attr,
 .code-block .hljs-attribute,
 .code-block .hljs-variable {
-  color: #79c0ff;
+  color: #d7dce4;
+  font-weight: 700;
 }
-.code-block .hljs-built_in,
-.code-block .hljs-type,
-.code-block .hljs-class .hljs-title {
-  color: #ffa657;
-}
+.code-block .hljs-comment,
+.code-block .hljs-quote,
 .code-block .hljs-meta,
 .code-block .hljs-tag {
-  color: #8b949e;
+  color: #9aa5b1;
+  font-style: italic;
 }
