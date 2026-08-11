@@ -159,8 +159,8 @@ export default function ChatPanel({
   const systemPrompt = useMemo(
     () =>
       "You are LlamaStudio, a helpful local AI assistant running entirely on the user's machine. " +
-      "Answer accurately and concisely. Use the provided tools when they help — e.g. list_files / read_file " +
-      "to inspect files in the workspace, calculate for math, get_current_time for dates. " +
+      "Answer accurately and concisely. Use the provided tools when they help — e.g. list_files / read_file / write_file " +
+      "to inspect and edit files, calculate for math, get_current_time for dates. You CAN create and edit files. " +
       `Your file access is ${fullAccess ? "NOT sandboxed — you can list/read files anywhere on this PC." : `sandboxed to the workspace: ${workspace || "(not set)"}`} ` +
       (fullAccess
         ? ""
@@ -451,7 +451,7 @@ function MessageBubble({ msg, onDelete }: { msg: ChatMsg; onDelete: () => void }
   if (msg.role === "user") {
     return (
       <div className="msg-row user">
-        <div className="msg-bubble user">
+        <div className="msg-content user">
           <div className="msg-text">{msg.content}</div>
           <div className="msg-meta">
             <span className="msg-time">{fmtTime(msg.ts)}</span>
@@ -465,7 +465,7 @@ function MessageBubble({ msg, onDelete }: { msg: ChatMsg; onDelete: () => void }
   if (msg.role === "tool") {
     return (
       <div className="msg-row tool">
-        <div className="msg-bubble tool">
+        <div className="msg-content tool">
           <div className="msg-text mono">{msg.content}</div>
         </div>
       </div>
@@ -477,7 +477,7 @@ function MessageBubble({ msg, onDelete }: { msg: ChatMsg; onDelete: () => void }
     <div className="msg-row assistant">
       <div className="msg-avatar">🦙</div>
       <div className="msg-body">
-        <div className="msg-bubble assistant">
+        <div className="msg-content assistant">
           {msg.reasoning && (
             <div className="reasoning-block">
               <button className="reasoning-toggle" onClick={() => setShowReasoning((s) => !s)}>

@@ -826,6 +826,7 @@ fn chat_tool_exec(
     workspace: String,
     arg: String,
     full_access: bool,
+    content: Option<String>,
 ) -> Result<serde_json::Value, String> {
     use std::path::Path;
 
@@ -917,6 +918,34 @@ fn chat_tool_exec(
             let content =
                 std::fs::read_to_string(&target_canon).map_err(|e| format!("Read error: {}", e))?;
             Ok(serde_json::json!({ "path": target_canon.to_string_lossy(), "content": content }))
+        }
+        "write_file" => {
+            let mut target = PathBuf::from(&arg);
+            if target.is_relative() {
+                target = ws_canon.join(target);
+            }
+            let target_canon = target.canonicalize().unwrap_or(target.clone());
+            // In full-access mode there's no sandbox; otherwise enforce it.
+            if !full_access && !target_canon.starts_with(&ws_canon) {
+                return Err(format!(
+                    "Path '{}' is outside the workspace '{}'",
+                    target_canon.display(),
+                    ws_canon.display()
+                ));
+            }
+            // Ensure the parent directory exists.
+            if let Some(parent) = target_canon.parent() {
+                if !parent.as_os_str().is_empty() {
+                    std::fs::create_dir_all(parent).map_err(|e| format!("Cannot create dir: {}", e))?;
+                }
+            }
+            let body = content.unwrap_or_default();
+            // Cap write size to avoid absurd payloads.
+            if body.len() > 512 * 1024 {
+                return Err("Content too large to write (max 512 KB)".into());
+            }
+            std::fs::write(&target_canon, body).map_err(|e| format!("Write error: {}", e))?;
+            Ok(serde_json::json!({ "path": target_canon.to_string_lossy(), "written": true }))
         }
         other => Err(format!("Unknown tool: {}", other)),
     }

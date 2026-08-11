@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./styles.css";
+import "highlight.js/styles/github-dark.css";
 
 // Error boundary: shows a readable message instead of a black window
 class ErrorBoundary extends React.Component<

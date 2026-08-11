@@ -159,6 +159,36 @@ export function buildTools(): ChatTool[] {
       def: {
         type: "function",
         function: {
+          name: "write_file",
+          description:
+            "Create or overwrite a text file at a path. Pass the full content in 'content'. Creates parent folders if needed.",
+          parameters: {
+            type: "object",
+            properties: {
+              path: { type: "string", description: "File path to write" },
+              content: { type: "string", description: "File contents" },
+            },
+            required: ["path", "content"],
+          },
+        },
+      },
+      executor: async (args, c) => {
+        const r = await invoke("chat_tool_exec", {
+          tool: "write_file",
+          workspace: c.fullAccess ? "" : c.workspace,
+          fullAccess: c.fullAccess,
+          arg: String(args.path ?? ""),
+          content: String(args.content ?? ""),
+        });
+        return truncate(JSON.stringify(r, null, 2), 2000);
+      },
+    },
+    {
+      category: "files",
+      enabled: true,
+      def: {
+        type: "function",
+        function: {
           name: "list_drives",
           description: "List available Windows drive letters (e.g. C:\\, D:\\).",
           parameters: { type: "object", properties: {} },
