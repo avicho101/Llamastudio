@@ -1,9 +1,12 @@
 // Chat message & tool-calling types
 
 export interface ToolCallArg {
-  name: string;
-  arguments: string; // JSON string
   id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string; // JSON string
+  };
 }
 
 export interface ChatMsg {

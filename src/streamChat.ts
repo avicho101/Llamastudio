@@ -25,9 +25,10 @@ function mergeToolDelta(
   const tc = delta?.tool_calls?.[0];
   if (!tc) return acc;
   const id = tc.id ? String(tc.id) : String(tc.index ?? "0");
-  const cur = acc.get(id) || { id, name: "", arguments: "" };
-  if (tc.function?.name) cur.name += tc.function.name;
-  if (tc.function?.arguments) cur.arguments += tc.function.arguments;
+  const cur: ToolCallArg =
+    acc.get(id) || { id, type: "function", function: { name: "", arguments: "" } };
+  if (tc.function?.name) cur.function.name += tc.function.name;
+  if (tc.function?.arguments) cur.function.arguments += tc.function.arguments;
   acc.set(id, cur);
   return acc;
 }
@@ -169,7 +170,7 @@ export async function streamChat(opts: StreamOptions): Promise<void> {
       return;
     }
 
-    const toolCalls = Array.from(toolAcc.values()).filter((t) => t.name);
+    const toolCalls = Array.from(toolAcc.values()).filter((t) => t.function.name);
     const wantsTools = finishReason === "tool_calls" || toolCalls.length > 0;
 
     // Emit assistant message content once (done).
@@ -184,7 +185,7 @@ export async function streamChat(opts: StreamOptions): Promise<void> {
         } catch (e) {
           results.push({
             toolCallId: call.id,
-            name: call.name,
+            name: call.function.name,
             content: `Error: ${String(e)}`,
             ok: false,
           });

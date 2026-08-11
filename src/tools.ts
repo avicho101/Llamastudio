@@ -184,30 +184,30 @@ export async function runTool(
   call: ToolCallArg,
   ctx: ToolCtx
 ): Promise<ToolResult> {
-  const tool = tools.find((t) => t.def.function.name === call.name);
+  const tool = tools.find((t) => t.def.function.name === call.function.name);
   if (!tool) {
     return {
       toolCallId: call.id,
-      name: call.name,
-      content: `Unknown tool: ${call.name}`,
+      name: call.function.name,
+      content: `Unknown tool: ${call.function.name}`,
       ok: false,
     };
   }
   if (!tool.enabled) {
     return {
       toolCallId: call.id,
-      name: call.name,
-      content: `Tool '${call.name}' is disabled in Skills settings.`,
+      name: call.function.name,
+      content: `Tool '${call.function.name}' is disabled in Skills settings.`,
       ok: false,
     };
   }
   try {
-    const content = await tool.executor(jsonArgs(call.arguments), ctx);
-    return { toolCallId: call.id, name: call.name, content, ok: true };
+    const content = await tool.executor(jsonArgs(call.function.arguments), ctx);
+    return { toolCallId: call.id, name: call.function.name, content, ok: true };
   } catch (e) {
     return {
       toolCallId: call.id,
-      name: call.name,
+      name: call.function.name,
       content: `Error: ${String(e)}`,
       ok: false,
     };

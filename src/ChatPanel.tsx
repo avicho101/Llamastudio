@@ -223,7 +223,7 @@ export default function ChatPanel({
         toolExec: async (call: ToolCallArg) => {
           setPendingTools((prev) => [
             ...prev,
-            { name: call.name, args: call.arguments, running: true },
+            { name: call.function.name, args: call.function.arguments, running: true },
           ]);
           const r: ToolResult = await runTool(tools, call, ctx);
           setPendingTools((prev) => {
