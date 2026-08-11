@@ -376,10 +376,22 @@ async fn handle_conn(mut stream: TcpStream, cfg: ConnCfg) {
         if kn == "content-length" || kn == "transfer-encoding" || kn == "connection" {
             continue;
         }
+        // Drop the upstream CORS header — llama-server emits an EMPTY
+        // access-control-allow-origin without --cors, which WebView2 treats as
+        // "no CORS" and blocks the response ("Failed to fetch"). We always emit
+        // our own `Access-Control-Allow-Origin: *` below.
+        if kn == "access-control-allow-origin" || kn == "access-control-allow-headers"
+            || kn == "access-control-allow-methods" || kn == "access-control-allow-credentials"
+        {
+            continue;
+        }
         if let Ok(vs) = v.to_str() {
             head.push_str(&format!("{}: {}\r\n", k.as_str(), vs));
         }
     }
+    // Always allow the browser/WebView to read this response regardless of the
+    // upstream's (possibly empty/missing) CORS headers.
+    head.push_str("Access-Control-Allow-Origin: *\r\n");
 
     // Buffer the full upstream body, then forward with Content-Length framing.
     //
@@ -395,11 +407,8 @@ async fn handle_conn(mut stream: TcpStream, cfg: ConnCfg) {
     // client we stream chunked instead of buffering.
     if wants_stream {
         // Forward chunked: write headers without Content-Length, then each
-        // upstream chunk as an HTTP/1.1 chunk.
+        // upstream chunk as an HTTP/1.1 chunk. (ACAO is already in `head`.)
         let mut stream_head = head.clone();
-        if !stream_head.to_ascii_lowercase().contains("access-control-allow-origin") {
-            stream_head.push_str("Access-Control-Allow-Origin: *\r\n");
-        }
         stream_head.push_str("Transfer-Encoding: chunked\r\n\r\n");
         if stream.write_all(stream_head.as_bytes()).await.is_err() {
             return;
