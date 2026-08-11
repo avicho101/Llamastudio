@@ -257,11 +257,32 @@ async fn handle_conn(mut stream: TcpStream, cfg: ConnCfg) {
     let method = parts[0];
     let path = parts[1];
 
+    // CORS preflight: answer OPTIONS directly (WebView2 enforces CORS, and
+    // upstream llama-server would reject/ignore the preflight).
+    if method.eq_ignore_ascii_case("OPTIONS") {
+        let _ = stream
+            .write_all(
+                b"HTTP/1.1 204 No Content\r\n\
+                  Access-Control-Allow-Origin: *\r\n\
+                  Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n\
+                  Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With\r\n\
+                  Access-Control-Max-Age: 86400\r\n\
+                  Content-Length: 0\r\n\
+                  Connection: keep-alive\r\n\r\n",
+            )
+            .await;
+        return;
+    }
+
     let mut content_length = 0usize;
+    let mut wants_stream = false; // set by the LlamaStudio chat (X-LlamaStudio-Stream)
     for h in lines {
         if let Some((k, v)) = h.split_once(":") {
             if k.trim().eq_ignore_ascii_case("content-length") {
                 content_length = v.trim().parse().unwrap_or(0);
+            }
+            if k.trim().eq_ignore_ascii_case("x-llamastudio-stream") {
+                wants_stream = v.trim().eq_ignore_ascii_case("1");
             }
         }
     }
@@ -368,6 +389,43 @@ async fn handle_conn(mut stream: TcpStream, cfg: ConnCfg) {
     // garbage -> "Stream decode error". So we mirror llama.cpp: Content-Length,
     // raw body. Tradeoff: Goose sees the reply when generation finishes, not
     // token-by-token. Correctness over token streaming.
+    //
+    // LlamaStudio's own chat sends X-LlamaStudio-Stream: 1 and wants true
+    // token-by-token streaming (WebView2 handles chunked fine) — so for that
+    // client we stream chunked instead of buffering.
+    if wants_stream {
+        // Forward chunked: write headers without Content-Length, then each
+        // upstream chunk as an HTTP/1.1 chunk.
+        let mut stream_head = head.clone();
+        if !stream_head.to_ascii_lowercase().contains("access-control-allow-origin") {
+            stream_head.push_str("Access-Control-Allow-Origin: *\r\n");
+        }
+        stream_head.push_str("Transfer-Encoding: chunked\r\n\r\n");
+        if stream.write_all(stream_head.as_bytes()).await.is_err() {
+            return;
+        }
+        let mut stream_body = resp.bytes_stream();
+        while let Some(chunk) = stream_body.next().await {
+            match chunk {
+                Ok(c) => {
+                    let mut framed = format!("{:X}\r\n", c.len()).into_bytes();
+                    framed.extend_from_slice(&c);
+                    framed.extend_from_slice(b"\r\n");
+                    if stream.write_all(&framed).await.is_err() {
+                        return;
+                    }
+                    if stream.flush().await.is_err() {
+                        return;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+        let _ = stream.write_all(b"0\r\n\r\n").await;
+        let _ = stream.flush().await;
+        return;
+    }
+
     let mut body_bytes: Vec<u8> = Vec::new();
     let mut stream_body = resp.bytes_stream();
     while let Some(chunk) = stream_body.next().await {

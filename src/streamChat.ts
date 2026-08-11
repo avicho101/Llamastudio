@@ -69,6 +69,9 @@ export async function streamChat(opts: StreamOptions): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        // Tells the LlamaStudio ContextShift proxy to stream chunked instead
+        // of buffering (Goose-compat path stays buffered).
+        "X-LlamaStudio-Stream": "1",
         ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
       },
       body: JSON.stringify(body),
