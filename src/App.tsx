@@ -751,6 +751,11 @@ export default function App() {
         </div>
       </header>
 
+      {/* Quick settings + status — hidden in Chat for a full-screen view */}
+      <div
+        className="top-settings"
+        style={{ display: activeTab === "chat" ? "none" : "block" }}
+      >
       <div className="statusbar">
         <span className={`dot ${running ? "on" : "off"}`} />
         <span className="status-text">{status}</span>
@@ -923,6 +928,7 @@ export default function App() {
             </div>
           )}
         </div>
+      </div>
       </div>
 
       <div className="tabs">

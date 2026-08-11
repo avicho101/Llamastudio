@@ -262,7 +262,7 @@
 }
 
 .msg-row.user {
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .msg-row.tool {
@@ -281,6 +281,11 @@
   flex-shrink: 0;
   box-shadow: 0 2px 8px rgba(124, 92, 255, 0.3);
   margin-top: 2px;
+}
+
+.msg-avatar.user {
+  background: linear-gradient(135deg, #4b5563, #6b7280);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 
 .msg-body {
@@ -439,7 +444,7 @@
   border-radius: 5px;
   font-family: var(--mono, monospace);
   font-size: 0.82em;
-  color: #f0abfc;
+  color: #79c0ff;
 }
 
 /* Code blocks */
@@ -455,32 +460,39 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 5px 12px;
-  background: #1a1d26;
-  border-bottom: 1px solid var(--border, #262a35);
+  padding: 6px 12px;
+  background: #1f242e;
+  border-bottom: 1px solid #333a47;
 }
 
 .code-lang {
-  font-size: 0.7rem;
-  color: var(--text-dim, #9aa3b2);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #cdd5e1;
   font-family: var(--mono, monospace);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.6px;
 }
 
 .code-copy {
-  background: transparent;
-  border: 1px solid var(--border, #262a35);
-  color: var(--text-dim, #9aa3b2);
+  background: #2a303b;
+  border: 1px solid #3d4552;
+  color: #e6e9ef;
   border-radius: 6px;
-  font-size: 0.68rem;
-  padding: 2px 8px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 3px 10px;
   cursor: pointer;
+  transition: background 0.15s;
 }
 
 .code-copy:hover {
-  color: var(--text, #e6e9ef);
-  background: var(--bg-3, #22262f);
+  background: #3a4250;
+  color: #ffffff;
+}
+
+.code-copy:active {
+  background: #4a5465;
 }
 
 .code-block pre {
@@ -695,4 +707,46 @@
 
 .btn-stop:hover {
   background: #dc2626;
+}
+
+/* Syntax highlighting overrides — replace the pink/magenta from the
+   github-dark theme with a calmer, more readable palette. */
+.code-block .hljs-keyword,
+.code-block .hljs-selector-tag,
+.code-block .hljs-literal {
+  color: #79c0ff;
+}
+.code-block .hljs-string,
+.code-block .hljs-regexp,
+.code-block .hljs-addition {
+  color: #7ee787;
+}
+.code-block .hljs-title,
+.code-block .hljs-function,
+.code-block .hljs-section {
+  color: #ffa657;
+}
+.code-block .hljs-comment,
+.code-block .hljs-quote {
+  color: #8b949e;
+  font-style: italic;
+}
+.code-block .hljs-number,
+.code-block .hljs-symbol,
+.code-block .hljs-bullet {
+  color: #79c0ff;
+}
+.code-block .hljs-attr,
+.code-block .hljs-attribute,
+.code-block .hljs-variable {
+  color: #79c0ff;
+}
+.code-block .hljs-built_in,
+.code-block .hljs-type,
+.code-block .hljs-class .hljs-title {
+  color: #ffa657;
+}
+.code-block .hljs-meta,
+.code-block .hljs-tag {
+  color: #8b949e;
 }

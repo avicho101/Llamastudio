@@ -451,6 +451,7 @@ function MessageBubble({ msg, onDelete }: { msg: ChatMsg; onDelete: () => void }
   if (msg.role === "user") {
     return (
       <div className="msg-row user">
+        <div className="msg-avatar user">👤</div>
         <div className="msg-content user">
           <div className="msg-text">{msg.content}</div>
           <div className="msg-meta">
