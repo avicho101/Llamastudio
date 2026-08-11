@@ -18,18 +18,25 @@ function parseSSEChunk(text: string): any[] {
 }
 
 // Accumulate split tool_calls deltas (OpenAI-style) into complete calls.
+// llama-server streams tool calls as: chunk1 {index, id, type, function:{name, arguments}},
+// subsequent chunks {index, function:{arguments}} — NO id. So key by index
+// (stable across the stream); fall back to id when index is absent.
 function mergeToolDelta(
   acc: Map<string, ToolCallArg>,
   delta: any
 ): Map<string, ToolCallArg> {
   const tc = delta?.tool_calls?.[0];
   if (!tc) return acc;
-  const id = tc.id ? String(tc.id) : String(tc.index ?? "0");
+  const key = tc.index !== undefined ? String(tc.index) : String(tc.id ?? "0");
   const cur: ToolCallArg =
-    acc.get(id) || { id, type: "function", function: { name: "", arguments: "" } };
+    acc.get(key) || {
+      id: tc.id ? String(tc.id) : key,
+      type: "function",
+      function: { name: "", arguments: "" },
+    };
   if (tc.function?.name) cur.function.name += tc.function.name;
   if (tc.function?.arguments) cur.function.arguments += tc.function.arguments;
-  acc.set(id, cur);
+  acc.set(key, cur);
   return acc;
 }
 
