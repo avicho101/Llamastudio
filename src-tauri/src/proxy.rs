@@ -313,6 +313,27 @@ async fn handle_one(stream: &mut TcpStream, cfg: &ConnCfg) -> bool {
         }
     }
 
+    // TEMP DEBUG: log request headers to a file so we can identify the
+    // connecting client (User-Agent etc.) for streaming detection.
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("C:\\Test\\proxy_debug.log")
+    {
+        let _ = writeln!(
+            f,
+            "[{}] {} {} | headers: {}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
+            method,
+            path,
+            header_str.replace("\r\n", " ; ")
+        );
+    }
+
     // Read the body. Two framing styles:
     //  - Content-Length (most clients, incl. LlamaStudio chat)
     //  - Transfer-Encoding: chunked (browsers, fetch, and MindShub Cowork's
