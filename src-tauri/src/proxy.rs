@@ -217,6 +217,17 @@ struct ConnCfg {
 }
 
 async fn handle_conn(mut stream: TcpStream, cfg: ConnCfg) {
+    // Serve multiple requests on one keep-alive connection. MindsHub Cowork
+    // (an Electron/undici client) reuses its socket for the next request; if we
+    // closed after the first response, its second write hit ECONNRESET.
+    while handle_one(&mut stream, &cfg).await {
+        // keep going while the client keeps the connection alive
+    }
+}
+
+/// Process a single HTTP request on `stream`. Returns `true` if the caller
+/// should keep serving (keep-alive), `false` if the connection is done/errored.
+async fn handle_one(stream: &mut TcpStream, cfg: &ConnCfg) -> bool {
     // Read the full HTTP request (headers + body).
     let mut buf = Vec::with_capacity(8192);
     let mut byte = [0u8; 1];
@@ -240,7 +251,7 @@ async fn handle_conn(mut stream: TcpStream, cfg: ConnCfg) {
     };
     let header_end = match header_end {
         Some(v) => v,
-        None => return,
+        None => return false,
     };
 
     // Parse request line + headers.
@@ -248,11 +259,11 @@ async fn handle_conn(mut stream: TcpStream, cfg: ConnCfg) {
     let mut lines = header_str.split("\r\n");
     let request_line = match lines.next() {
         Some(l) => l.to_string(),
-        None => return,
+        None => return false,
     };
     let parts: Vec<&str> = request_line.split_whitespace().collect();
     if parts.len() < 2 {
-        return;
+        return false;
     }
     let method = parts[0];
     let path = parts[1];
@@ -271,7 +282,18 @@ async fn handle_conn(mut stream: TcpStream, cfg: ConnCfg) {
                   Connection: keep-alive\r\n\r\n",
             )
             .await;
-        return;
+        return true;
+    }
+
+    // Decide keep-alive based on the client's Connection header.
+    let mut keep_alive = true; // HTTP/1.1 defaults to keep-alive
+    for h in lines.clone() {
+        if let Some((k, v)) = h.split_once(":") {
+            if k.trim().eq_ignore_ascii_case("connection") {
+                let v = v.trim().to_ascii_lowercase();
+                keep_alive = !v.contains("close");
+            }
+        }
     }
 
     let mut content_length = 0usize;
@@ -345,7 +367,7 @@ async fn handle_conn(mut stream: TcpStream, cfg: ConnCfg) {
     } else if content_length > 0 {
         body.resize(content_length, 0u8);
         if stream.read_exact(&mut body).await.is_err() {
-            return;
+            return false;
         }
     }
 
@@ -407,12 +429,12 @@ async fn handle_conn(mut stream: TcpStream, cfg: ConnCfg) {
         Ok(r) => r,
         Err(e) => {
             let _ = write_simple(
-                &mut stream,
+                stream,
                 502,
                 &format!("ContextShift proxy: upstream error: {}", e),
             )
             .await;
-            return;
+            return keep_alive;
         }
     };
 
@@ -465,7 +487,7 @@ async fn handle_conn(mut stream: TcpStream, cfg: ConnCfg) {
         let mut stream_head = head.clone();
         stream_head.push_str("Transfer-Encoding: chunked\r\n\r\n");
         if stream.write_all(stream_head.as_bytes()).await.is_err() {
-            return;
+            return false;
         }
         let mut stream_body = resp.bytes_stream();
         while let Some(chunk) = stream_body.next().await {
@@ -475,10 +497,10 @@ async fn handle_conn(mut stream: TcpStream, cfg: ConnCfg) {
                     framed.extend_from_slice(&c);
                     framed.extend_from_slice(b"\r\n");
                     if stream.write_all(&framed).await.is_err() {
-                        return;
+                        return false;
                     }
                     if stream.flush().await.is_err() {
-                        return;
+                        return false;
                     }
                 }
                 Err(_) => break,
@@ -486,7 +508,7 @@ async fn handle_conn(mut stream: TcpStream, cfg: ConnCfg) {
         }
         let _ = stream.write_all(b"0\r\n\r\n").await;
         let _ = stream.flush().await;
-        return;
+        return keep_alive;
     }
 
     let mut body_bytes: Vec<u8> = Vec::new();
@@ -498,12 +520,13 @@ async fn handle_conn(mut stream: TcpStream, cfg: ConnCfg) {
     }
     head.push_str(&format!("Content-Length: {}\r\n\r\n", body_bytes.len()));
     if stream.write_all(head.as_bytes()).await.is_err() {
-        return;
+        return false;
     }
     if stream.write_all(&body_bytes).await.is_err() {
-        return;
+        return false;
     }
     let _ = stream.flush().await;
+    keep_alive
 }
 
 async fn write_simple(stream: &mut TcpStream, status: u16, msg: &str) -> std::io::Result<()> {
