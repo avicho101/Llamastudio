@@ -276,6 +276,7 @@ async fn handle_conn(mut stream: TcpStream, cfg: ConnCfg) {
 
     let mut content_length = 0usize;
     let mut wants_stream = false; // set by the LlamaStudio chat (X-LlamaStudio-Stream)
+    let mut is_chunked = false; // MindShub Cowork sends Transfer-Encoding: chunked (no CL)
     for h in lines {
         if let Some((k, v)) = h.split_once(":") {
             if k.trim().eq_ignore_ascii_case("content-length") {
@@ -284,12 +285,65 @@ async fn handle_conn(mut stream: TcpStream, cfg: ConnCfg) {
             if k.trim().eq_ignore_ascii_case("x-llamastudio-stream") {
                 wants_stream = v.trim().eq_ignore_ascii_case("1");
             }
+            if k.trim().eq_ignore_ascii_case("transfer-encoding") {
+                is_chunked = v.trim().to_ascii_lowercase().contains("chunked");
+            }
         }
     }
 
-    // Read the body.
-    let mut body = vec![0u8; content_length];
-    if content_length > 0 {
+    // Read the body. Two framing styles:
+    //  - Content-Length (most clients, incl. LlamaStudio chat)
+    //  - Transfer-Encoding: chunked (browsers, fetch, and MindShub Cowork's
+    //    cloud operator) — sends NO Content-Length. If we ignored it here, we'd
+    //    forward an empty body and llama-server would 500 with
+    //    "parse error at line 1, column 1: attempting to parse an empty input".
+    let mut body: Vec<u8> = Vec::with_capacity(content_length);
+    if is_chunked {
+        // Decode HTTP/1.1 chunked framing: "<hex-size>\r\n<bytes>\r\n ... 0\r\n\r\n".
+        let mut byte = [0u8; 1];
+        loop {
+            // Read the size line up to CRLF.
+            let mut size_line = Vec::with_capacity(16);
+            let mut saw_crlf = false;
+            while size_line.len() < 64 {
+                match stream.read(&mut byte).await {
+                    Ok(0) => break,
+                    Ok(_) => {
+                        size_line.push(byte[0]);
+                        if size_line.len() >= 2
+                            && size_line[size_line.len() - 2] == b'\r'
+                            && size_line[size_line.len() - 1] == b'\n'
+                        {
+                            saw_crlf = true;
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            if !saw_crlf {
+                break;
+            }
+            let size_str = String::from_utf8_lossy(&size_line[..size_line.len() - 2]);
+            // Chunk extensions after ';' are ignored.
+            let size_hex = size_str.split(';').next().unwrap_or("").trim();
+            let chunk_size = usize::from_str_radix(size_hex, 16).unwrap_or(0);
+            if chunk_size == 0 {
+                // Consume the optional trailer / final CRLF.
+                let _ = stream.read(&mut byte).await;
+                break;
+            }
+            let start = body.len();
+            body.resize(start + chunk_size, 0u8);
+            if stream.read_exact(&mut body[start..]).await.is_err() {
+                break;
+            }
+            // Consume the CRLF after the chunk data.
+            let mut crlf = [0u8; 2];
+            let _ = stream.read_exact(&mut crlf).await;
+        }
+    } else if content_length > 0 {
+        body.resize(content_length, 0u8);
         if stream.read_exact(&mut body).await.is_err() {
             return;
         }
