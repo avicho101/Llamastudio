@@ -299,6 +299,7 @@ async fn handle_one(stream: &mut TcpStream, cfg: &ConnCfg) -> bool {
     let mut content_length = 0usize;
     let mut wants_stream = false; // set by the LlamaStudio chat (X-LlamaStudio-Stream)
     let mut is_chunked = false; // MindShub Cowork sends Transfer-Encoding: chunked (no CL)
+    let mut user_agent = String::new();
     for h in lines {
         if let Some((k, v)) = h.split_once(":") {
             if k.trim().eq_ignore_ascii_case("content-length") {
@@ -310,28 +311,10 @@ async fn handle_one(stream: &mut TcpStream, cfg: &ConnCfg) -> bool {
             if k.trim().eq_ignore_ascii_case("transfer-encoding") {
                 is_chunked = v.trim().to_ascii_lowercase().contains("chunked");
             }
+            if k.trim().eq_ignore_ascii_case("user-agent") {
+                user_agent = v.trim().to_ascii_lowercase();
+            }
         }
-    }
-
-    // TEMP DEBUG: log request headers to a file so we can identify the
-    // connecting client (User-Agent etc.) for streaming detection.
-    use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open("C:\\Test\\proxy_debug.log")
-    {
-        let _ = writeln!(
-            f,
-            "[{}] {} {} | headers: {}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0),
-            method,
-            path,
-            header_str.replace("\r\n", " ; ")
-        );
     }
 
     // Read the body. Two framing styles:
@@ -502,7 +485,12 @@ async fn handle_one(stream: &mut TcpStream, cfg: &ConnCfg) -> bool {
     // LlamaStudio's own chat sends X-LlamaStudio-Stream: 1 and wants true
     // token-by-token streaming (WebView2 handles chunked fine) — so for that
     // client we stream chunked instead of buffering.
-    if wants_stream {
+    //
+    // Unsloth (python-httpx UA) also handles chunked/SSE fine, so stream for it
+    // too. Everything else (notably Goose, whose parser can't decode chunked)
+    // stays buffered.
+    let stream_for_client = wants_stream || user_agent.contains("httpx");
+    if stream_for_client {
         // Forward chunked: write headers without Content-Length, then each
         // upstream chunk as an HTTP/1.1 chunk. (ACAO is already in `head`.)
         let mut stream_head = head.clone();
