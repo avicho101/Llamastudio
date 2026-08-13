@@ -517,3 +517,87 @@ async fn write_simple(stream: &mut TcpStream, status: u16, msg: &str) -> std::io
     stream.write_all(body.as_bytes()).await?;
     stream.flush().await
 }
+
+/// Parse a raw `Transfer-Encoding: chunked` HTTP body into its decoded bytes.
+/// `input` is the full chunked body starting at the first chunk-size line.
+fn decode_chunked_body(input: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    loop {
+        // Read the size line up to CRLF.
+        let mut size_line = Vec::with_capacity(16);
+        let mut saw_crlf = false;
+        while i < input.len() && size_line.len() < 64 {
+            let b = input[i];
+            i += 1;
+            size_line.push(b);
+            if size_line.len() >= 2
+                && size_line[size_line.len() - 2] == b'\r'
+                && size_line[size_line.len() - 1] == b'\n'
+            {
+                saw_crlf = true;
+                break;
+            }
+        }
+        if !saw_crlf {
+            break;
+        }
+        let size_str = String::from_utf8_lossy(&size_line[..size_line.len() - 2]);
+        let size_hex = size_str.split(';').next().unwrap_or("").trim();
+        let chunk_size = usize::from_str_radix(size_hex, 16).unwrap_or(0);
+        if chunk_size == 0 {
+            break;
+        }
+        if i + chunk_size > input.len() {
+            break;
+        }
+        out.extend_from_slice(&input[i..i + chunk_size]);
+        i += chunk_size;
+        // Skip the CRLF after chunk data.
+        if i + 2 <= input.len() {
+            i += 2;
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode_chunked_body;
+
+    #[test]
+    fn decodes_multi_chunk() {
+        // 0x0a then 0x05
+        let mut input = Vec::new();
+        input.extend_from_slice(b"0a\r\n1234567890\r\n05\r\nABCDE\r\n0\r\n\r\n");
+        let out = decode_chunked_body(&input);
+        assert_eq!(out, b"1234567890ABCDE");
+    }
+
+    #[test]
+    fn empty_body() {
+        assert_eq!(decode_chunked_body(b"0\r\n\r\n"), b"");
+    }
+
+    #[test]
+    fn handles_chunk_extension() {
+        // "{\"a\":1}" is exactly 7 bytes = 0x7.
+        let input = b"7;foo=bar\r\n{\"a\":1}\r\n0\r\n\r\n";
+        let out = decode_chunked_body(input);
+        assert_eq!(out, b"{\"a\":1}");
+    }
+
+    #[test]
+    fn decodes_single_chunk_correct_size() {
+        // Realistic OpenAI payload; size header must match byte count.
+        let content = "{\"model\":\"x\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}";
+        let hex = format!("{:x}", content.len());
+        let mut input = Vec::new();
+        input.extend_from_slice(hex.as_bytes());
+        input.extend_from_slice(b"\r\n");
+        input.extend_from_slice(content.as_bytes());
+        input.extend_from_slice(b"\r\n0\r\n\r\n");
+        let out = decode_chunked_body(&input);
+        assert_eq!(out, content.as_bytes());
+    }
+}
